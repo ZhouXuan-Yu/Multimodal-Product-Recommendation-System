@@ -1,0 +1,127 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multimodal-recommendation-system"
+version = "1.0.0"
+description = "基于多模态融合的个性化商品推荐系统"
+authors = [
+    {name = "荆传智", email = "author@example.com"},
+]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Multimedia :: Graphics",
+]
+dependencies = [
+    "numpy>=1.24.0",
+    "pandas>=1.5.0",
+    "scikit-learn>=1.2.0",
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    "Pillow>=10.0.0",
+    "requests>=2.28.0",
+    "tqdm>=4.64.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "mypy>=1.0.0",
+    "flake8>=6.0.0",
+]
+gui = [
+    "PyQt6>=6.5.0",
+    "PyQt6-Qt6>=6.5.0",
+]
+ai = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "transformers>=4.21.0",
+]
+database = [
+    "pymysql>=1.0.0",
+    "sqlalchemy>=2.0.0",
+    "DBUtils>=3.0.0",
+]
+
+[project.scripts]
+multimodal-rec = "run:main"
+
+[tool.setuptools]
+packages = ["config", "core", "data", "ui", "utils", "tests"]
+package-dir = {"" = "."}
+
+[tool.setuptools.package-data]
+"*" = ["*.yml", "*.yaml", "*.json", "*.txt"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 100
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "PyQt6.*",
+    "pymysql.*",
+    "DBUtils.*",
+    "matplotlib.*",
+    "sklearn.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --cov=multimodal_recommendation --cov-report=html --cov-report=term-missing"
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+
+[tool.coverage.run]
+source = ["config", "core", "data", "ui", "utils"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+]
+

@@ -1,0 +1,22 @@
+[
+  {
+    "user_id": "U001",
+    "username": "user1",
+    "preferences": [
+      "电子产品",
+      "时尚"
+    ],
+    "age": 25,
+    "gender": "female"
+  },
+  {
+    "user_id": "U002",
+    "username": "user2",
+    "preferences": [
+      "运动",
+      "户外"
+    ],
+    "age": 30,
+    "gender": "male"
+  }
+]

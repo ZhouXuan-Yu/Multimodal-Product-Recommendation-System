@@ -1,0 +1,26 @@
+[
+  {
+    "user_id": "U001",
+    "product_id": "P001",
+    "action": "view",
+    "rating": 5
+  },
+  {
+    "user_id": "U001",
+    "product_id": "P002",
+    "action": "purchase",
+    "rating": 4
+  },
+  {
+    "user_id": "U002",
+    "product_id": "P001",
+    "action": "favorite",
+    "rating": 5
+  },
+  {
+    "user_id": "U002",
+    "product_id": "P004",
+    "action": "view",
+    "rating": 3
+  }
+]

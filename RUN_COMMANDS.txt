@@ -1,0 +1,91 @@
+多模态商品推荐系统 - 运行指令合集
+=====================================
+
+快速启动（推荐）
+----------------
+python run.py                    # 智能检测环境并运行最合适版本
+python quick_start.py           # 一键配置环境并启动
+
+完整启动流程
+------------
+1. 创建环境: conda env create -f requirements/environment.yml
+2. 激活环境: conda activate jin
+3. 初始化数据: python scripts/init_database.py  (可选)
+4. 启动程序: python run.py
+
+不同版本启动
+------------
+python main_enterprise.py        # 企业级完整版本（推荐）
+python main.py                  # 简化版本
+python demo.py                  # 命令行演示版本
+
+平台特定启动脚本
+----------------
+Windows: start.bat              # 双击运行
+Linux/Mac: ./start.sh           # 需要执行权限: chmod +x start.sh
+
+辅助工具
+--------
+python simple_ui_demo.py        # 查看界面设计演示
+python scripts/setup_environment.py  # 环境配置脚本
+python scripts/init_database.py     # 数据库初始化
+
+验证环境
+--------
+python --version               # 检查Python版本 (需要3.8+)
+conda --version               # 检查Conda是否可用
+conda env list                # 查看可用环境
+conda activate jin            # 激活项目环境
+
+默认账户
+--------
+用户名: admin    密码: admin
+用户名: user1    密码: 123456
+
+故障排除
+--------
+# 查看日志
+cat logs/app.log
+
+# 检查依赖
+pip list | grep -E "(PyQt|numpy|pandas)"
+
+# 重新安装环境
+conda env remove -n jin -y
+conda env create -f requirements/environment.yml
+
+# 手动安装核心依赖
+pip install PyQt6 numpy pandas matplotlib seaborn scikit-learn pillow
+
+文件说明
+--------
+main_enterprise.py    - 企业级主程序（完整功能）
+main.py              - 简化版主程序
+run.py               - 智能启动脚本
+quick_start.py       - 一键配置启动脚本
+start.bat            - Windows批处理启动
+start.sh             - Linux/Mac启动脚本
+START_GUIDE.md       - 详细启动指南
+UI_DESIGN.md         - 界面设计文档
+
+环境要求
+--------
+操作系统: Windows 10+/macOS 10.14+/Ubuntu 18.04+
+内存: 4GB+ (推荐8GB+)
+磁盘空间: 2GB+ (推荐5GB+)
+Python: 3.8+ (推荐3.10+)
+
+网络要求
+--------
+无需网络连接（离线运行）
+如需更新模型，可连接网络下载
+
+技术栈
+------
+前端: PyQt6 + Matplotlib
+后端: Python + MySQL (可选)
+AI: PyTorch + Transformers (可选)
+工具: Conda + pip
+
+=====================================
+

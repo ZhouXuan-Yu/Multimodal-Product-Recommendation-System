@@ -1,0 +1,77 @@
+[
+  {
+    "product_id": "P001",
+    "title": "Nike Air Max 270",
+    "description": "舒适的运动鞋，适合日常穿着和运动",
+    "category": "鞋类",
+    "price": 899.0,
+    "rating": 4.5,
+    "image_path": "nike_air_max.jpg",
+    "tags": [
+      "运动鞋",
+      "Nike",
+      "舒适",
+      "时尚"
+    ]
+  },
+  {
+    "product_id": "P002",
+    "title": "Apple MacBook Pro 14寸",
+    "description": "专业级笔记本电脑，M2芯片，性能卓越",
+    "category": "电子产品",
+    "price": 14999.0,
+    "rating": 4.8,
+    "image_path": "macbook_pro.jpg",
+    "tags": [
+      "笔记本",
+      "Apple",
+      "M2",
+      "专业"
+    ]
+  },
+  {
+    "product_id": "P003",
+    "title": "Sony WH-1000XM4 头戴式耳机",
+    "description": "主动降噪无线耳机，音质出众",
+    "category": "电子产品",
+    "price": 2499.0,
+    "rating": 4.6,
+    "image_path": "sony_wh1000xm4.jpg",
+    "tags": [
+      "耳机",
+      "Sony",
+      "降噪",
+      "无线"
+    ]
+  },
+  {
+    "product_id": "P004",
+    "title": "Levi's 501牛仔裤",
+    "description": "经典直筒牛仔裤，舒适耐穿",
+    "category": "服装",
+    "price": 599.0,
+    "rating": 4.3,
+    "image_path": "levis_501.jpg",
+    "tags": [
+      "牛仔裤",
+      "Levi's",
+      "经典",
+      "舒适"
+    ]
+  },
+  {
+    "product_id": "P005",
+    "title": "Dyson V8吸尘器",
+    "description": "无绳吸尘器，强劲吸力，方便易用",
+    "category": "家居",
+    "price": 3499.0,
+    "rating": 4.7,
+    "image_path": "dyson_v8.jpg",
+    "tags": [
+      "吸尘器",
+      "Dyson",
+      "无绳",
+      "强劲"
+    ]
+  }
+]

@@ -1,0 +1,21 @@
+{
+  "training_timestamp": "2026-01-06 21:36:53.953929",
+  "gpu_stats_count": 0,
+  "feature_extraction": {
+    "text_features_count": 5,
+    "gpu_peak_usage": 0,
+    "gpu_avg_temperature": 0
+  },
+  "models": {
+    "collaborative_filtering": {
+      "status": "trained",
+      "users_count": 2,
+      "items_count": 5
+    },
+    "content_based": {
+      "status": "trained",
+      "features_dimension": 2076,
+      "products_count": 5
+    }
+  }
+}

@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE / Editor settings
+.vscode/
+.idea/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Large raw dataset archives (keep only locally)
+data/raw/clothing-dataset-small.zip
+data/raw/*.zip
+

@@ -24,3 +24,10 @@ logs/
 data/raw/clothing-dataset-small.zip
 data/raw/*.zip
 
+# Node dependencies
+node_modules/
+module_frontend_vue/node_modules/
+
+# Local data artifacts (do not push to Git)
+data/images/
+data/vector_store/

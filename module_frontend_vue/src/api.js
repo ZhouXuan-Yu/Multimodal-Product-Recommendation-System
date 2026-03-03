@@ -1,0 +1,64 @@
+// 统一封装前端与 FastAPI 后端交互的 API 模块
+// 使用 axios 实例，便于后续统一处理超时、鉴权、错误上报等逻辑
+
+import axios from 'axios'
+
+// 开发环境推荐保持同源，通过 Vite proxy 转发到后端（见 vite.config.js）。
+// 如需直连后端，可在 .env.local 中设置：VITE_API_BASE_URL=http://127.0.0.1:8000
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+
+const instance = axios.create({
+  baseURL: BASE_URL,
+  timeout: 15000,
+})
+
+// 请求拦截器：可以在这里自动附加用户标识、token 等
+instance.interceptors.request.use(
+  (config) => {
+    // 例如：config.headers['X-User-Id'] = currentUserId
+    return config
+  },
+  (error) => Promise.reject(error),
+)
+
+// 响应拦截器：统一处理错误、打印日志
+instance.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // 这里可以接入全局消息组件（如 ElMessage / 自定义 Toast）
+    console.error('API 请求异常：', error)
+    return Promise.reject(error)
+  },
+)
+
+// 获取用户画像与行为数据，用于仪表盘
+export function fetchUserProfile(userId) {
+  return instance.get(`/api/user_profile/${userId}`)
+}
+
+// 洞察中心：获取用户事件流（已在后端 join product 信息，可用于筛选/钻取/对比/异常检测/导出）
+export function fetchInsightEvents(userId, params = {}) {
+  return instance.get(`/api/insights/${userId}/events`, { params })
+}
+
+// 获取推荐商品列表（支持 query / 分页，具体参数需与后端对齐）
+export function fetchRecommendations(params) {
+  // 约定 params: { user_id, query, page, page_size }
+  return instance.post('/api/recommend', params)
+}
+
+// 日志上报：点击、加购等行为
+export function logUserAction(payload) {
+  // payload: { user_id, product_id, action, extra? }
+  return instance.post('/api/log_action', payload)
+}
+
+// 与 DeepSeek / 后端 LLM 对话
+export function chatWithAI(payload) {
+  // payload: { user_id, message, context? }
+  // 后端建议返回：{ reply: string, product_suggestions?: Array<{product_id, name, price, image_url, reason}> }
+  return instance.post('/api/ai_chat', payload)
+}
+
+export { BASE_URL, instance as axiosInstance }
+

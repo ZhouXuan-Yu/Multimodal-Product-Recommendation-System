@@ -17,6 +17,8 @@ import json
 import logging
 import random
 import re
+import shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
@@ -49,9 +51,32 @@ class Product:
 class LocalDataBootstrapper:
     """负责本地目录初始化与商品采集。"""
 
-    def __init__(self, timeout: int = 15):
+    def __init__(self, timeout: int = 15, max_workers: int = 8):
         self.timeout = timeout
         self.logger = logging.getLogger(self.__class__.__name__)
+        # 控制下载与处理时的最大线程数，避免开太多线程把网络/显存打爆
+        self.max_workers = max_workers
+
+    def reset_data(self) -> None:
+        """清理本地旧数据：图片、元数据与向量库目录。
+
+        - data/images/*
+        - data/meta/products.json
+        - data/meta/users_profile.json
+        - data/vector_store/*
+        """
+        vector_store_dir = DATA_DIR / "vector_store"
+
+        if IMAGES_DIR.exists():
+            shutil.rmtree(IMAGES_DIR, ignore_errors=True)
+        if vector_store_dir.exists():
+            shutil.rmtree(vector_store_dir, ignore_errors=True)
+        if PRODUCTS_JSON.exists():
+            PRODUCTS_JSON.unlink(missing_ok=True)  # type: ignore[arg-type]
+        if USERS_PROFILE_JSON.exists():
+            USERS_PROFILE_JSON.unlink(missing_ok=True)  # type: ignore[arg-type]
+
+        self.logger.info("已清理本地旧数据（images/meta/vector_store）。")
 
     def init_directories(self) -> None:
         """创建本地目录与基础 JSON 文件。"""
@@ -133,21 +158,29 @@ class LocalDataBootstrapper:
             self.logger.warning("图片下载失败，已跳过: %s, error=%s", image_url, exc)
             return None
 
-    def run(self, limit: int) -> None:
-        """主流程：抓取商品 -> 下载图片 -> 落盘 products.json。"""
+    def run(self, limit: int, reset: bool = False) -> None:
+        """主流程：可选清理 -> 抓取商品 -> 多线程下载图片 -> 落盘 products.json。
+
+        - limit: 目标商品数量（例如 3000）
+        - reset: 是否在本次运行前清理旧数据与向量库
+        """
+        if reset:
+            self.reset_data()
+
         self.init_directories()
         raw_items = self.fetch_products(limit=limit)
 
         products: list[Product] = []
-        for item in raw_items:
+
+        def process_item(item: dict[str, Any]) -> Product | None:
             raw_id = str(item.get("id", "unknown"))
             safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", raw_id)
             image_rel_path = self.download_image(item.get("image", ""), f"product_{safe_name}.jpg")
             if not image_rel_path:
                 # 图片失败则跳过，避免无效记录进入后续多模态流程
-                continue
+                return None
 
-            product = Product(
+            return Product(
                 product_id=f"p_{raw_id}",
                 name=str(item.get("title", "未命名商品")),
                 description=str(item.get("description", "")),
@@ -156,7 +189,14 @@ class LocalDataBootstrapper:
                 image_path=image_rel_path,
                 source_url=FAKESTORE_API,
             )
-            products.append(product)
+
+        # 使用线程池并行下载图片与构建 Product，提升 3000+ 商品场景下的初始化速度
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = [executor.submit(process_item, item) for item in raw_items]
+            for future in as_completed(futures):
+                product = future.result()
+                if product is not None:
+                    products.append(product)
 
         self._atomic_write_json(PRODUCTS_JSON, [asdict(p) for p in products])
         self.logger.info("数据初始化完成：成功写入 %s 条商品", len(products))
@@ -173,7 +213,12 @@ class LocalDataBootstrapper:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="自动化商品采集与本地数据初始化")
-    parser.add_argument("--limit", type=int, default=30, help="抓取商品数量（建议 20~50）")
+    parser.add_argument("--limit", type=int, default=30, help="抓取商品数量（建议 20~50，批量实验可设为 3000）")
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="在本次运行前清理本地旧数据（images/meta/vector_store），适用于大规模重新初始化",
+    )
     return parser.parse_args()
 
 
@@ -185,7 +230,7 @@ def main() -> None:
         raise ValueError("--limit 必须大于 0")
 
     bootstrapper = LocalDataBootstrapper()
-    bootstrapper.run(limit=args.limit)
+    bootstrapper.run(limit=args.limit, reset=args.reset)
 
 
 if __name__ == "__main__":

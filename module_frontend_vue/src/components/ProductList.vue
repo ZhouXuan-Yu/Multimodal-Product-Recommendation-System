@@ -3,7 +3,7 @@
     <h3>推荐商品</h3>
     <div class="waterfall">
       <div v-for="item in items" :key="item.product_id" class="card" @click="$emit('item-click', item)">
-        <img :src="`${baseUrl}${item.image_url}`" :alt="item.name" />
+        <img :src="resolveImageUrl(item?.image_url)" :alt="item.name" />
         <div class="meta">
           <strong>{{ item.name }}</strong>
           <p>¥ {{ item.price }}</p>
@@ -18,7 +18,11 @@
 defineProps({
   items: { type: Array, default: () => [] },
 })
-const baseUrl = 'http://localhost:8000'
+const resolveImageUrl = (url) => {
+  if (!url) return ''
+  if (url.startsWith('http')) return url
+  return url
+}
 defineEmits(['item-click'])
 </script>
 

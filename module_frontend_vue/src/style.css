@@ -1,0 +1,114 @@
+/* ========== Global Warm Minimal Glassmorphism Theme ========== */
+
+:root {
+  /* 背景：温暖米白基调 + 轻微渐变层次 */
+  --bg-base: #f5f1ea;
+  --bg-soft-1: #f9f5ee;
+  --bg-soft-2: #f3ebe0;
+  --bg-soft-3: #fdfaf5;
+
+  /* 玻璃拟态：浅色磨砂 + 柔和阴影 */
+  --glass-bg: rgba(255, 255, 255, 0.58);
+  --glass-border: rgba(255, 255, 255, 0.9);
+  --glass-shadow: 0 14px 40px rgba(15, 23, 42, 0.06);
+  --glass-radius-lg: 22px;
+
+  /* 文字与中性色 */
+  --text-main: #27272f;
+  --text-muted: #808089;
+  --text-subtle: #a0a0aa;
+
+  /* 品牌与点缀色：橙色为主，辅以少量冷色平衡 */
+  --accent-orange: #f97316;
+  --accent-orange-soft: #fed7aa;
+  --accent-orange-bg: rgba(249, 115, 22, 0.08);
+  --accent-deep: #c2410c;
+
+  --accent-blue: #60a5fa;
+  --accent-emerald: #16a34a;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC',
+    'Microsoft YaHei', 'Noto Sans SC', Roboto, Poppins, sans-serif;
+  color: var(--text-main);
+  background:
+    radial-gradient(circle at top left, rgba(250, 250, 249, 0.9), var(--bg-soft-1)),
+    radial-gradient(circle at bottom right, rgba(248, 250, 252, 0.9), var(--bg-soft-2));
+  position: relative;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: -10%;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 8% 12%, rgba(253, 186, 116, 0.55), transparent 55%),
+    radial-gradient(circle at 82% 88%, rgba(248, 250, 252, 0.9), transparent 55%),
+    radial-gradient(circle at 0% 100%, rgba(251, 213, 141, 0.4), transparent 45%);
+  filter: blur(60px);
+  opacity: 0.85;
+  z-index: -1;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+/* ========== Core Glassmorphism Utility ========== */
+
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(26px) saturate(140%);
+  -webkit-backdrop-filter: blur(26px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: 18px;
+}
+
+.glass-elevated {
+  background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.92), rgba(248, 249, 252, 0.96));
+  backdrop-filter: blur(28px) saturate(150%);
+  -webkit-backdrop-filter: blur(28px) saturate(150%);
+  border-radius: var(--glass-radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    0 20px 45px rgba(15, 23, 42, 0.08),
+    0 0 0 1px rgba(148, 163, 184, 0.18);
+}
+
+.text-glow {
+  color: var(--accent-deep);
+  text-shadow:
+    0 0 10px rgba(251, 146, 60, 0.6),
+    0 0 22px rgba(249, 115, 22, 0.7);
+}
+
+.gradient-text {
+  background: linear-gradient(120deg, #f97316, #fb923c, #fed7aa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.soft-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.soft-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.soft-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 999px;
+}
+

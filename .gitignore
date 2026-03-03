@@ -24,3 +24,9 @@ logs/
 data/raw/clothing-dataset-small.zip
 data/raw/*.zip
 
+
+# Frontend dependencies
+module_frontend_vue/node_modules/
+
+# Local vector database / embeddings store
+data/vector_store/

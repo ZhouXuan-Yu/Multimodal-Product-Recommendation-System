@@ -28,26 +28,30 @@
       </div>
     </section>
 
-    <!-- 可视化区域：环形图 + 组合图 -->
+    <!-- 可视化区域：视觉审美雷达 + 推荐来源环图 + 意图波峰趋势 -->
     <section class="charts-grid">
       <div class="chart-card glass-elevated">
         <header class="chart-header">
           <div class="chart-title-block">
             <div class="pulse-dot"></div>
             <div>
-              <h3>品类偏好分布</h3>
-              <p class="sub">点击扇区可进行下钻查看子类目</p>
+              <h3>视觉 DNA & 推荐来源构成</h3>
+              <p class="sub">从图像向量中提取审美画像，并展示多模态推荐来源</p>
             </div>
           </div>
-          <button
-            v-if="drillStack.length"
-            class="back-btn"
-            @click="handleDrillBack"
-          >
-            返回上一级
-          </button>
         </header>
-        <div ref="donutRef" class="chart-body"></div>
+        <div class="chart-body dual">
+          <div class="sub-chart">
+            <h4 class="mini-title">视觉审美雷达</h4>
+            <p class="mini-sub">极简 / 技术感 / 商务 / 复古 / 机能</p>
+            <div ref="radarRef" class="sub-chart-inner"></div>
+          </div>
+          <div class="sub-chart">
+            <h4 class="mini-title">推荐来源占比</h4>
+            <p class="mini-sub">文本搜索 / 图像浏览 / 历史交互</p>
+            <div ref="contributionRef" class="sub-chart-inner"></div>
+          </div>
+        </div>
       </div>
 
       <div class="chart-card glass-elevated">
@@ -55,8 +59,8 @@
           <div class="chart-title-block">
             <div class="pulse-dot"></div>
             <div>
-              <h3>7 日行为趋势 & 转化漏斗</h3>
-              <p class="sub">活跃度、浏览次数与加购点击转化率双 Y 轴对比</p>
+              <h3>意图波峰 & 行为趋势</h3>
+              <p class="sub">识别用户意图高峰，并结合活跃度、浏览与转化率进行洞察</p>
             </div>
           </div>
         </header>
@@ -92,33 +96,91 @@ const currentAction = ref('basic')
 const dateRange = ref('')
 
 // ECharts DOM 引用
-const donutRef = ref(null)
+const radarRef = ref(null)
+const contributionRef = ref(null)
 const comboRef = ref(null)
 
 // ECharts 实例
-let donutChart = null
+let radarChart = null
+let contributionChart = null
 let comboChart = null
 
-// 原始类目偏好数据 & 下钻栈
-const categoryData = ref([])
-const drillStack = ref([])
+// 画像与行为基础数据
+const visualStyleVector = ref(null)
+const contributionData = ref([])
+const trendDays = ref([])
+const trendActivity = ref([])
+const trendViews = ref([])
+const trendConversion = ref([])
+const intentPeaks = ref([])
 
-// 为了示意“数据钻取”，构造一个简单的本地子类目映射
-// 实际项目中建议在点击后再次请求后端获取子类目数据
-const mockSubCategoryMap = {
-  数码: ['手机', '相机', '音频设备', '智能穿戴'],
-  服饰: ['上衣', '裤装', '鞋履', '配饰'],
-  家居: ['客厅', '卧室', '厨房', '收纳'],
-  美妆: ['底妆', '护肤', '香水', '彩妆'],
+// 视觉审美雷达图 option
+const buildVisualRadarOption = (vector) => {
+  const dims = ['极简', '技术感', '商务', '复古', '机能']
+  const safeVector = vector && typeof vector === 'object' ? vector : {}
+  const values = dims.map((k) => Number(safeVector[k] ?? 0))
+
+  return {
+    backgroundColor: 'transparent',
+    radar: {
+      indicator: dims.map((name) => ({ name, max: 1 })),
+      radius: '70%',
+      axisLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.5)' } },
+      splitLine: { lineStyle: { color: 'rgba(30, 64, 175, 0.55)' } },
+      splitArea: {
+        areaStyle: {
+          color: [
+            'rgba(15, 23, 42, 0.2)',
+            'rgba(30, 64, 175, 0.12)',
+            'rgba(59, 130, 246, 0.08)',
+          ],
+        },
+      },
+      name: {
+        textStyle: {
+          color: '#e5e7eb',
+          fontSize: 11,
+        },
+      },
+    },
+    series: [
+      {
+        type: 'radar',
+        data: [
+          {
+            value: values,
+            name: '视觉审美',
+            areaStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 1, 1, [
+                { offset: 0, color: 'rgba(249, 115, 22, 0.55)' },
+                { offset: 1, color: 'rgba(139, 92, 246, 0.6)' },
+              ]),
+              opacity: 0.6,
+            },
+            lineStyle: {
+              color: '#fb923c',
+              width: 2,
+            },
+            itemStyle: {
+              color: '#fed7aa',
+              shadowBlur: 12,
+              shadowColor: 'rgba(248, 250, 252, 0.4)',
+            },
+          },
+        ],
+        animationDuration: 800,
+      },
+    ],
+  }
 }
 
-// 根据当前类目数组生成环形图 option
-const buildDonutOption = (items) => {
+// 推荐来源贡献环形图 option
+const buildContributionOption = (items) => {
   return {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'item',
-      formatter: '{b}<br/>占比：{d}%',
+      formatter: '{b}<br/>贡献占比：{d}%',
     },
     legend: {
       orient: 'vertical',
@@ -130,7 +192,7 @@ const buildDonutOption = (items) => {
     },
     series: [
       {
-        name: '类目偏好',
+        name: '推荐来源',
         type: 'pie',
         radius: ['42%', '70%'],
         center: ['35%', '50%'],
@@ -147,7 +209,6 @@ const buildDonutOption = (items) => {
           length: 12,
           length2: 8,
         },
-        // 添加顺滑的入场动画
         animationEasing: 'cubicOut',
         animationDuration: 800,
         data: items,
@@ -156,8 +217,19 @@ const buildDonutOption = (items) => {
   }
 }
 
-// 构造 7 日行为趋势 & 转化率组合图 option
-const buildComboOption = (days, activity, views, conversion) => {
+// 构造 7 日行为趋势 & 意图波峰组合图 option
+const buildComboOption = (days, activity, views, conversion, peaks = []) => {
+  const peakByIndex = {}
+  const indexedPeaks = []
+  peaks.forEach((p) => {
+    const label = p.day || p.date
+    if (!label) return
+    const idx = days.indexOf(label)
+    if (idx === -1) return
+    peakByIndex[idx] = p
+    indexedPeaks.push({ idx, peak: p })
+  })
+
   return {
     backgroundColor: 'transparent',
     tooltip: {
@@ -168,6 +240,23 @@ const buildComboOption = (days, activity, views, conversion) => {
           backgroundColor: '#111827',
         },
       },
+      formatter: (params) => {
+        if (!params || !params.length) return ''
+        const axisLabel = params[0].axisValue
+        const peak = peaks.find((p) => (p.day || p.date) === axisLabel)
+        const header = params
+          .map(
+            (p) =>
+              `${p.marker} ${p.seriesName}：${
+                p.seriesName.includes('转化率') ? `${p.data}%` : p.data
+              }`,
+          )
+          .join('<br/>')
+        if (!peak || !peak.summary) return `${axisLabel}<br/>${header}`
+        return `${axisLabel}<br/>${header}<br/><span style="color:#f97316;">意图摘要：</span>${
+          peak.summary
+        }`
+      },
     },
     grid: {
       left: '6%',
@@ -177,7 +266,7 @@ const buildComboOption = (days, activity, views, conversion) => {
       containLabel: true,
     },
     legend: {
-      data: ['活跃度评分', '浏览次数', '加购/点击转化率'],
+      data: ['活跃度评分', '浏览次数', '加购/点击转化率', '意图波峰'],
       top: 8,
       textStyle: {
         color: '#9ca3af',
@@ -239,6 +328,23 @@ const buildComboOption = (days, activity, views, conversion) => {
         lineStyle: {
           width: 2,
         },
+        markPoint: indexedPeaks.length
+          ? {
+              symbol: 'circle',
+              symbolSize: 10,
+              itemStyle: {
+                color: '#f97316',
+                shadowBlur: 16,
+                shadowColor: 'rgba(248, 113, 22, 0.7)',
+              },
+              data: indexedPeaks.map(({ idx, peak }) => ({
+                name: '意图波峰',
+                xAxis: idx,
+                yAxis: activity[idx] ?? 0,
+                value: peak.summary || '意图波峰',
+              })),
+            }
+          : undefined,
       },
       {
         name: '加购/点击转化率',
@@ -260,7 +366,15 @@ const buildComboOption = (days, activity, views, conversion) => {
           color: '#16a34a',
         },
       },
-    ],
+      // 占位图例系列，用于在图例中展示“意图波峰”含义
+      indexedPeaks.length
+        ? {
+            name: '意图波峰',
+            type: 'scatter',
+            data: [],
+          }
+        : null,
+    ].filter(Boolean),
   }
 }
 
@@ -268,17 +382,42 @@ const buildComboOption = (days, activity, views, conversion) => {
 const loadData = async () => {
   try {
     const { data } = await fetchUserProfile(props.userId)
-    // category_preferences: { "数码": 0.3, "服饰": 0.2, ... }
-    const pref = data.category_preferences || {}
-    const categories = Object.keys(pref)
-    const values = Object.values(pref).map((v) => Number(v))
 
-    // 归一 + 转换为 ECharts pie 需要的数据结构
-    const items = categories.map((name, idx) => ({
-      name,
-      value: Number((values[idx] * 100).toFixed(2)),
-    }))
-    categoryData.value = items
+    // 视觉审美向量（来自 ChromaDB 图像特征聚合 + DeepSeek 语义变换）
+    // 期望结构：data.visual_style = { "极简": 0.78, "技术感": 0.92, ... }
+    const visual = data.visual_style || data.visualStyle || null
+    // 如果后端暂未提供，则回退为一个中性画像，避免图表空白
+    visualStyleVector.value =
+      visual && Object.keys(visual).length
+        ? visual
+        : {
+            极简: 0.6,
+            技术感: 0.7,
+            商务: 0.5,
+            复古: 0.4,
+            机能: 0.65,
+          }
+
+    // 推荐来源贡献度结构预留
+    // 期望结构：data.contribution = { text_search: 0.3, image_browse: 0.5, historical_interactions: 0.2 }
+    const contribRaw = data.contribution || data.recommendation_contribution || null
+    const contribution = contribRaw && Object.keys(contribRaw).length
+      ? contribRaw
+      : {
+          text_search: 0.3,
+          image_browse: 0.5,
+          historical_interactions: 0.2,
+        }
+
+    const contribItems = [
+      { name: '文本搜索', value: Number(((contribution.text_search ?? 0) * 100).toFixed(2)) },
+      { name: '图像浏览记录', value: Number(((contribution.image_browse ?? 0) * 100).toFixed(2)) },
+      {
+        name: '历史交互',
+        value: Number(((contribution.historical_interactions ?? 0) * 100).toFixed(2)),
+      },
+    ]
+    contributionData.value = contribItems
 
     // recent_activity 兼容两种结构：
     // 1) [{ day, activity_score, views, conversion_rate }]
@@ -303,12 +442,32 @@ const loadData = async () => {
       conversion = rawRecent.map((d) => Number((d.conversion_rate ?? 0) * 100))
     }
 
-    // 初始化 / 刷新两个图表（先使用基础模式）
-    if (donutChart) {
-      donutChart.setOption(buildDonutOption(items))
+    trendDays.value = days
+    trendActivity.value = activity
+    trendViews.value = views
+    trendConversion.value = conversion
+
+    // 意图波峰：来自后端 ChromaDB 偏移量 + DeepSeek 摘要（预留字段）
+    // 期望结构：[{ day: '2026-03-03', peak_type: 'research', summary: '该时段用户正在深度调研 RTX 5060 相关配件', ... }]
+    intentPeaks.value = Array.isArray(data.intent_peaks) ? data.intent_peaks : []
+
+    // 初始化 / 刷新三个图表（基础模式）
+    if (radarChart) {
+      radarChart.setOption(buildVisualRadarOption(visualStyleVector.value))
+    }
+    if (contributionChart) {
+      contributionChart.setOption(buildContributionOption(contributionData.value))
     }
     if (comboChart) {
-      comboChart.setOption(buildComboOption(days, activity, views, conversion))
+      comboChart.setOption(
+        buildComboOption(
+          trendDays.value,
+          trendActivity.value,
+          trendViews.value,
+          trendConversion.value,
+          intentPeaks.value,
+        ),
+      )
     }
 
     applyActionMode()
@@ -321,68 +480,71 @@ const loadData = async () => {
 const applyActionMode = () => {
   console.debug('[AnalyticsDashboard] 切换分析模式', currentAction.value)
 
-  if (!donutChart || !comboChart || !categoryData.value.length) return
-
-  const baseItems = categoryData.value
+  if (!radarChart || !contributionChart || !comboChart) return
 
   if (currentAction.value === 'basic') {
-    // 基础图表：直接使用原始数据
-    donutChart.setOption(buildDonutOption(baseItems), true)
-    // 不额外修改组合图，仅保证最新配置
-    comboChart.setOption(comboChart.getOption(), false)
+    // 基础图表：直接使用原始画像与贡献数据
+    radarChart.setOption(buildVisualRadarOption(visualStyleVector.value), true)
+    contributionChart.setOption(buildContributionOption(contributionData.value), true)
+    comboChart.setOption(
+      buildComboOption(
+        trendDays.value,
+        trendActivity.value,
+        trendViews.value,
+        trendConversion.value,
+        intentPeaks.value,
+      ),
+      true,
+    )
     return
   }
 
   if (currentAction.value === 'drill') {
-    // 数据钻取：高亮当前层级，并在控制台提示可点击扇区下钻
-    const option = buildDonutOption(baseItems)
-    option.title = {
-      text: '当前层级（点击扇区继续下钻）',
-      left: 'center',
-      top: 6,
-      textStyle: { color: '#e5e7eb', fontSize: 12 },
-    }
-    donutChart.setOption(option, true)
-    console.info('[AnalyticsDashboard] 已进入“数据钻取”模式，点击环形图扇区即可查看子类目分布')
+    // 数据钻取：在当前阶段，将其理解为“主力推荐来源聚焦”
+    const sorted = [...contributionData.value].sort((a, b) => b.value - a.value)
+    const top = sorted[0]
+    const enhanced = sorted.map((it) => ({
+      ...it,
+      selected: it.name === top.name,
+    }))
+    contributionChart.setOption(buildContributionOption(enhanced), true)
+    console.info('[AnalyticsDashboard] 已进入“数据钻取”模式，已高亮主力推荐来源作为聚焦点')
     return
   }
 
   if (currentAction.value === 'compare') {
-    // 数据对比：按照占比从大到小排序，便于查看主力类目 VS 长尾类目
-    const sorted = [...baseItems].sort((a, b) => b.value - a.value)
-    const option = buildDonutOption(sorted)
-    donutChart.setOption(option, true)
-    console.info('[AnalyticsDashboard] 已按类目占比从大到小排序，便于横向对比')
+    // 数据对比：按照贡献从大到小排序，便于查看主力来源 VS 辅助来源
+    const sorted = [...contributionData.value].sort((a, b) => b.value - a.value)
+    const option = buildContributionOption(sorted)
+    contributionChart.setOption(option, true)
+    console.info('[AnalyticsDashboard] 已按推荐来源贡献从大到小排序，便于横向对比')
     return
   }
 
   if (currentAction.value === 'anomaly') {
-    // 异常检测：简单示意——高亮 Top1 类目，视为“异常波动点”
-    if (!baseItems.length) return
-    const topItem = [...baseItems].sort((a, b) => b.value - a.value)[0]
-    const option = buildDonutOption(
-      baseItems.map((it) => ({
-        ...it,
-        selected: it.name === topItem.name,
-      })),
+    // 异常检测：简单示意——在趋势图中高亮存在意图波峰的日期
+    comboChart.setOption(
+      buildComboOption(
+        trendDays.value,
+        trendActivity.value,
+        trendViews.value,
+        trendConversion.value,
+        intentPeaks.value,
+      ),
+      true,
     )
-    option.series[0].emphasis = {
-      scale: true,
-      scaleSize: 10,
-    }
-    donutChart.setOption(option, true)
-    console.info('[AnalyticsDashboard] 已高亮占比最高的类目，作为“异常关注点”的示意')
+    console.info('[AnalyticsDashboard] 已高亮存在意图波峰的日期，作为“异常关注点”的示意')
     return
   }
 
   if (currentAction.value === 'filter') {
-    // 筛选：过滤掉占比过低的类目，仅保留主力类目
+    // 筛选：过滤掉贡献过低的来源，仅保留主力来源
     const threshold = 8
-    const filtered = baseItems.filter((it) => it.value >= threshold)
-    const option = buildDonutOption(filtered.length ? filtered : baseItems)
-    donutChart.setOption(option, true)
+    const filtered = contributionData.value.filter((it) => it.value >= threshold)
+    const option = buildContributionOption(filtered.length ? filtered : contributionData.value)
+    contributionChart.setOption(option, true)
     console.info(
-      '[AnalyticsDashboard] 已过滤掉占比低于 ' + threshold + '% 的类目，仅保留主力类目进行观察',
+      '[AnalyticsDashboard] 已过滤掉贡献低于 ' + threshold + '% 的推荐来源，仅保留主力来源进行观察',
     )
   }
 }
@@ -395,7 +557,7 @@ const exportCharts = () => {
   }
 
   try {
-    const donutUrl = donutChart?.getDataURL({
+    const contributionUrl = contributionChart?.getDataURL({
       type: 'png',
       pixelRatio: 2,
       backgroundColor: '#020617',
@@ -410,12 +572,12 @@ const exportCharts = () => {
     const win = window.open('')
     if (win) {
       win.document.write('<title>图表导出预览</title>')
-      if (donutUrl) {
-        win.document.write('<h3>品类偏好分布</h3>')
-        win.document.write(`<img src="${donutUrl}" style="max-width:100%;" />`)
+      if (contributionUrl) {
+        win.document.write('<h3>推荐来源占比</h3>')
+        win.document.write(`<img src="${contributionUrl}" style="max-width:100%;" />`)
       }
       if (comboUrl) {
-        win.document.write('<h3>7 日行为趋势 & 转化漏斗</h3>')
+        win.document.write('<h3>意图波峰 & 行为趋势</h3>')
         win.document.write(`<img src="${comboUrl}" style="max-width:100%;margin-top:12px;" />`)
       }
     }
@@ -441,40 +603,13 @@ const refreshData = () => {
   loadData()
 }
 
-// 下钻逻辑：点击环形图扇区时，将当前层级推入栈，并切换为子类目视图
-const handleDonutClick = (params) => {
-  const clickedName = params.name
-  // 记录当前层级以便“返回上一级”
-  drillStack.value.push(categoryData.value)
-
-  const subNames = mockSubCategoryMap[clickedName] || ['子类目 A', '子类目 B', '子类目 C']
-  // 随机生成一个子类目分布，实际建议调用后端接口
-  const subItems = subNames.map((name) => ({
-    name,
-    value: Math.round(Math.random() * 40 + 10),
-  }))
-  categoryData.value = subItems
-
-  if (donutChart) {
-    donutChart.setOption(buildDonutOption(subItems), true)
-  }
-}
-
-// 返回上一级数据
-const handleDrillBack = () => {
-  const prev = drillStack.value.pop()
-  if (!prev) return
-  categoryData.value = prev
-  if (donutChart) {
-    donutChart.setOption(buildDonutOption(prev), true)
-  }
-}
-
 // 初始化 ECharts 实例
 const initCharts = () => {
-  if (donutRef.value) {
-    donutChart = echarts.init(donutRef.value)
-    donutChart.on('click', handleDonutClick)
+  if (radarRef.value) {
+    radarChart = echarts.init(radarRef.value)
+  }
+  if (contributionRef.value) {
+    contributionChart = echarts.init(contributionRef.value)
   }
   if (comboRef.value) {
     comboChart = echarts.init(comboRef.value)
@@ -486,7 +621,8 @@ let resizeTimer = null
 const handleResize = () => {
   if (resizeTimer) window.clearTimeout(resizeTimer)
   resizeTimer = window.setTimeout(() => {
-    donutChart && donutChart.resize()
+    radarChart && radarChart.resize()
+    contributionChart && contributionChart.resize()
     comboChart && comboChart.resize()
   }, 150)
 }
@@ -499,9 +635,13 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
-  if (donutChart) {
-    donutChart.dispose()
-    donutChart = null
+  if (radarChart) {
+    radarChart.dispose()
+    radarChart = null
+  }
+  if (contributionChart) {
+    contributionChart.dispose()
+    contributionChart = null
   }
   if (comboChart) {
     comboChart.dispose()

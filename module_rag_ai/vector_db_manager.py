@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import chromadb
 
@@ -67,14 +67,27 @@ class VectorDBManager:
         self,
         query: str,
         embedder: ChineseCLIPEmbedder,
-        top_k: int = 3,
-        include: list[str] | None = None,
+        top_k: int = 20,
+        include: Optional[list[str]] = None,
+        where: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
-        """将自然语言查询向量化后检索 Top-K。"""
+        """
+        将自然语言查询向量化后检索 Top-K。
+
+        支持：
+        - include: 控制返回字段（如 ["metadatas", "documents", "distances", "ids"]）
+        - where: ChromaDB 结构化过滤条件，例如：
+            {"category": "笔记本电脑", "price": {"$gte": 3000, "$lte": 6000}}
+        """
         query_vector = embedder.encode_text(query).tolist()
-        kwargs: dict[str, Any] = {"query_embeddings": [query_vector], "n_results": top_k}
+        kwargs: dict[str, Any] = {
+            "query_embeddings": [query_vector],
+            "n_results": top_k,
+        }
         if include is not None:
             kwargs["include"] = include
+        if where:
+            kwargs["where"] = where
         return self.collection.query(**kwargs)
 
 

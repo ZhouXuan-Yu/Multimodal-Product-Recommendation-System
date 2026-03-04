@@ -86,24 +86,18 @@ class Settings:
                     'level': 'INFO',
                     'formatter': 'simple',
                     'stream': 'ext://sys.stdout'
-                },
-                'file': {
-                    'class': 'logging.handlers.RotatingFileHandler',
-                    'level': 'DEBUG',
-                    'formatter': 'detailed',
-                    'filename': os.path.join(self.PROJECT_ROOT, 'logs', 'app.log'),
-                    'maxBytes': 10 * 1024 * 1024,  # 10MB
-                    'backupCount': 5
                 }
             },
             'root': {
                 'level': 'DEBUG' if self.DEBUG else 'INFO',
-                'handlers': ['console', 'file']
+                # 仅输出到控制台，便于在终端直接查看日志
+                'handlers': ['console']
             },
             'loggers': {
                 'multimodal_recommendation': {
                     'level': 'DEBUG' if self.DEBUG else 'INFO',
-                    'handlers': ['console', 'file'],
+                    # 同样只绑定到控制台 handler
+                    'handlers': ['console'],
                     'propagate': False
                 }
             }

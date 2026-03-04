@@ -32,10 +32,8 @@ def setup_logging():
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.StreamHandler(sys.stdout),
-                logging.FileHandler('app.log', encoding='utf-8')
-            ]
+            # 兜底配置也只输出到终端，避免再写本地 txt / log 文件
+            handlers=[logging.StreamHandler(sys.stdout)],
         )
         logger = logging.getLogger('multimodal_recommendation')
         logger.error(f"日志系统配置失败，使用基本配置: {e}")

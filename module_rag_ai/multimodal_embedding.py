@@ -31,9 +31,14 @@ class ChineseCLIPEmbedder:
         self.text_weight = text_weight
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
+        # 使用半精度以提升 RTX 5060 等 GPU 的吞吐与显存利用率
+        torch_dtype = torch.float16 if self.device == "cuda" else torch.float32
         self.processor = AutoProcessor.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name).to(self.device)
-        self.model.eval()
+        self.model = AutoModel.from_pretrained(model_name, torch_dtype=torch_dtype).to(self.device)
+        if self.device == "cuda":
+            self.model = self.model.eval()
+        else:
+            self.model = self.model.eval()
 
     @torch.no_grad()
     def encode_text(self, text: str) -> np.ndarray:
@@ -86,4 +91,29 @@ class ChineseCLIPEmbedder:
         return self.fuse(image_vec, text_vec)
 
     def batch_encode_text(self, texts: Iterable[str]) -> list[np.ndarray]:
-        return [self.encode_text(t) for t in texts]
+        """批量文本编码，内部走单次 batch 推理以提升吞吐。"""
+        texts = list(texts)
+        if not texts:
+            return []
+        inputs = self.processor(text=texts, return_tensors="pt", padding=True).to(self.device)
+        try:
+            text_features = self.model.get_text_features(**inputs)
+        except TypeError:
+            text_features = None
+
+        if text_features is None:
+            text_outputs = self.model.text_model(
+                input_ids=inputs.get("input_ids"),
+                attention_mask=inputs.get("attention_mask"),
+                token_type_ids=inputs.get("token_type_ids"),
+                output_hidden_states=False,
+                return_dict=True,
+            )
+            last_hidden = text_outputs.last_hidden_state  # [B, T, H]
+            pooled = last_hidden[:, 0, :]  # CLS
+            text_features = self.model.text_projection(pooled)
+
+        text_features = torch.nn.functional.normalize(text_features, dim=-1)
+        return [
+            text_features[i].detach().cpu().numpy().astype(np.float32) for i in range(text_features.shape[0])
+        ]

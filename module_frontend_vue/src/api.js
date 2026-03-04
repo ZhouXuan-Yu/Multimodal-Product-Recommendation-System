@@ -46,6 +46,24 @@ export function fetchInsightEvents(userId, params = {}) {
   return instance.get(`/api/insights/${userId}/events`, { params })
 }
 
+// 洞察中心：获取用户画像向量偏移轨迹（用于向量轨迹图）
+export function fetchVectorDrift(userId, params = {}) {
+  // params: { max_events? }
+  return instance.get(`/api/insights/${userId}/vector_drift`, { params })
+}
+
+// 洞察中心：获取用户多模态行为路径桑基图数据
+export function fetchBehaviorSankey(userId, params = {}) {
+  // params: { limit? }
+  return instance.get(`/api/insights/${userId}/behavior_sankey`, { params })
+}
+
+// 洞察中心：获取两个时间段的语义化对比结果（语义差分看板 + 健康度 + AI 叙事）
+export function fetchInsightSemanticDiff(userId, params = {}) {
+  // params: { a_start, a_end, b_start, b_end }
+  return instance.get(`/api/insights/${userId}/semantic_diff`, { params })
+}
+
 // 获取推荐商品列表（支持 query / 分页，具体参数需与后端对齐）
 export function fetchRecommendations(params) {
   // 约定 params: { user_id, query, page, page_size }
@@ -69,6 +87,36 @@ export function chatWithAI(payload) {
 export function ragSearch(params) {
   // params: { q, top_k }
   return instance.get('/api/rag_search', { params })
+}
+
+// ===== 订单相关接口封装 =====
+
+// 订单预览：不写入本地文件，只用于结算前预确认
+// payload: { user_id, currency?, note?, items: [{ product_id, quantity }] }
+export function previewOrder(payload) {
+  return instance.post('/api/orders/preview', payload)
+}
+
+// 创建订单：真正写入 data/meta/orders.json，返回带 order_id 的订单对象
+// payload 结构与 previewOrder 相同
+export function createOrder(payload) {
+  return instance.post('/api/orders', payload)
+}
+
+// 模拟支付：仅本地将状态从 pending → paid
+// payload: { order_id, payment_channel }
+export function payOrder(payload) {
+  return instance.post('/api/orders/pay', payload)
+}
+
+// 订单列表与详情
+export function fetchOrders(params = {}) {
+  // params: { user_id?, limit? }
+  return instance.get('/api/orders', { params })
+}
+
+export function fetchOrderDetail(orderId) {
+  return instance.get(`/api/orders/${orderId}`)
 }
 
 export { BASE_URL, instance as axiosInstance }

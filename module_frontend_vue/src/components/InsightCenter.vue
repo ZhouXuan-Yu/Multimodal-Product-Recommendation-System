@@ -210,13 +210,23 @@
 
           <div v-else class="ic-drill-grid">
             <div class="ic-card-inner glass-panel">
-              <div class="ic-inner-title">该类目 Top 商品</div>
+              <div class="ic-inner-title">该类目 Top 商品（点击可查看向量影响与行为路径）</div>
               <div class="ic-top-items soft-scrollbar">
-                <div v-for="p in drillTopProducts" :key="p.product_id" class="ic-item">
+                <div
+                  v-for="p in drillTopProducts"
+                  :key="p.product_id"
+                  class="ic-item clickable"
+                  @click="handleClickProduct(p)"
+                >
                   <img v-if="p.image_url" class="ic-item-img" :src="p.image_url" :alt="p.product_name" />
                   <div class="ic-item-meta">
-                    <div class="ic-item-name">{{ p.product_name || p.product_id }}</div>
-                    <div class="ic-item-sub">点击/事件：{{ p.count }}</div>
+                    <div class="ic-item-name">
+                      {{ p.product_name || p.product_id }}
+                    </div>
+                    <div class="ic-item-sub">
+                      点击/事件：{{ p.count }}
+                      <span v-if="drill.productId === p.product_id" class="ic-tag-current">已选中</span>
+                    </div>
                   </div>
                 </div>
                 <div v-if="!drillTopProducts.length" class="ic-hint">该类目暂无事件</div>
@@ -231,6 +241,27 @@
             <div class="ic-card-inner glass-panel wide">
               <div class="ic-inner-title">类目趋势</div>
               <div ref="drillTrendRef" class="ic-chart small"></div>
+            </div>
+
+            <div class="ic-card-inner glass-panel wide">
+              <div class="ic-inner-title">
+                向量偏移轨迹图
+                <span v-if="drill.productName" class="ic-inner-sub">
+                  · 当前商品：{{ drill.productName }}
+                </span>
+              </div>
+              <div v-if="!drill.productId" class="ic-hint">
+                请选择左侧任一 Top 商品，查看该商品点击后用户画像在向量空间中的偏移轨迹。
+              </div>
+              <div v-else ref="vectorDriftRef" class="ic-chart small"></div>
+            </div>
+
+            <div class="ic-card-inner glass-panel wide">
+              <div class="ic-inner-title">行为轨迹流 · 多模态路径桑基图</div>
+              <div v-if="!sankeyReady" class="ic-hint">
+                选择任一商品后，将自动加载从搜索 / 入口到详情再到反馈的行为路径。
+              </div>
+              <div v-else ref="sankeyRef" class="ic-chart small"></div>
             </div>
           </div>
         </div>
@@ -291,6 +322,140 @@
               </div>
             </div>
           </div>
+
+          <!-- 语义差分看板 + AI 叙事 -->
+          <div class="ic-semantic-card glass-panel">
+            <div class="ic-card-head ic-semantic-head">
+              <div class="ic-title">
+                <span class="ic-dot emerald"></span>
+                <div>
+                  <h3>语义差分看板 · AI 解读</h3>
+                  <p class="ic-sub">
+                    基于 Top10 商品语义与行为强度，解释本期与上期「为什么会不一样」
+                  </p>
+                </div>
+              </div>
+              <div class="ic-semantic-status">
+                <span v-if="semanticLoading" class="ic-sub">AI 正在分析...</span>
+                <span v-else-if="semanticError" class="ic-sub error">{{ semanticError }}</span>
+              </div>
+            </div>
+
+            <div v-if="semanticDiff" class="ic-semantic-body">
+              <!-- AI 叙事总结 -->
+              <p class="ic-semantic-summary">
+                {{ semanticDiff.summary_text }}
+              </p>
+
+              <!-- 语义重心迁移 -->
+              <div class="ic-focus-shift-row">
+                <div class="ic-focus-pill from">
+                  <span class="label">上期焦点</span>
+                  <span class="value">{{ semanticDiff.focus_shift?.from_focus || '—' }}</span>
+                </div>
+                <div class="ic-focus-arrow">→</div>
+                <div class="ic-focus-pill to">
+                  <span class="label">本期焦点</span>
+                  <span class="value">{{ semanticDiff.focus_shift?.to_focus || '—' }}</span>
+                </div>
+                <div class="ic-intent-chip" :class="{ up: (semanticDiff.focus_shift?.intent_delta_pct || 0) > 0, down: (semanticDiff.focus_shift?.intent_delta_pct || 0) < 0 }">
+                  意图强度
+                  <span class="num">
+                    {{ semanticDiff.focus_shift?.intent_delta_pct > 0 ? '+' : '' }}{{ semanticDiff.focus_shift?.intent_delta_pct ?? 0 }}%
+                  </span>
+                </div>
+              </div>
+              <div class="ic-focus-desc">
+                {{ semanticDiff.focus_shift?.focus_shift_desc }}
+              </div>
+
+              <!-- 关键语义维度差分列表 -->
+              <div class="ic-semantic-dims soft-scrollbar">
+                <div
+                  v-for="dim in semanticDiff.semantic_diff_board || []"
+                  :key="dim.dimension"
+                  class="ic-dim-row"
+                >
+                  <div class="ic-dim-main">
+                    <div class="ic-dim-name">{{ dim.dimension }}</div>
+                    <div class="ic-dim-bars">
+                      <div class="ic-dim-bar before">
+                        <span class="label">上期</span>
+                        <div class="bar">
+                          <div
+                            class="fill"
+                            :style="{ width: Math.min(100, (dim.weight_before || 0) * 100) + '%' }"
+                          ></div>
+                        </div>
+                      </div>
+                      <div class="ic-dim-bar after">
+                        <span class="label">本期</span>
+                        <div class="bar">
+                          <div
+                            class="fill"
+                            :style="{ width: Math.min(100, (dim.weight_after || 0) * 100) + '%' }"
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="ic-dim-meta">
+                    <span
+                      class="delta"
+                      :class="{
+                        up: dim.direction === 'up',
+                        down: dim.direction === 'down',
+                      }"
+                    >
+                      {{ dim.direction === 'up' ? '↑' : dim.direction === 'down' ? '↓' : '→' }}
+                      {{ dim.delta > 0 ? '+' : '' }}{{ dim.delta }}
+                    </span>
+                    <span class="comment">{{ dim.comment }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 健康度红/绿呼吸灯 -->
+              <div class="ic-health-row">
+                <div class="ic-health-block">
+                  <div class="ic-health-title">
+                    <span
+                      class="ic-health-dot breathe"
+                      :class="`status-${semanticDiff.health?.overall_health || 'warning'}`"
+                    ></span>
+                    整体兴趣健康度
+                  </div>
+                  <div class="ic-health-tag">
+                    {{ semanticDiff.health?.overall_health || '—' }}
+                  </div>
+                </div>
+
+                <div class="ic-health-block">
+                  <div class="ic-health-title">
+                    <span
+                      class="ic-health-dot breathe"
+                      :class="`status-${semanticDiff.health?.behavior_depth_health || 'warning'}`"
+                    ></span>
+                    行为深度健康度
+                  </div>
+                  <div class="ic-health-tag">
+                    {{ semanticDiff.health?.behavior_depth_health || '—' }}
+                  </div>
+                </div>
+
+                <div class="ic-health-block suggestion">
+                  <div class="ic-health-title">AI 建议</div>
+                  <div class="ic-health-text">
+                    {{ semanticDiff.health?.suggested_action }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-else-if="!semanticLoading && !semanticError" class="ic-hint ic-semantic-empty">
+              请选择完整的本期/上期时间范围并点击「更新对比」，AI 将为你解读语义差异与健康度。
+            </div>
+          </div>
         </div>
       </div>
 
@@ -302,7 +467,7 @@
               <span class="ic-dot emerald"></span>
               <div>
                 <h3>异常检测</h3>
-                <p class="ic-sub">基于按天事件量的 Z-Score 检测异常波动点</p>
+                <p class="ic-sub">基于按天事件量的 Z-Score 置信区间，识别兴趣突变与新兴兴趣</p>
               </div>
             </div>
             <div class="ic-anom-tools">
@@ -316,14 +481,39 @@
 
           <div ref="anomalyRef" class="ic-chart tall"></div>
 
+          <!-- 兴趣偏移预测预警 -->
+          <div v-if="anomalies.some((x) => x.willShiftProfile)" class="ic-anom-warning glass-panel">
+            <div class="ic-anom-warning-main">
+              <div class="ic-anom-warning-title">系统发现可能存在新的兴趣领域</div>
+              <div class="ic-anom-warning-text">
+                若这类异常行为在未来 3 天持续，用户画像在对应方向上的权重将发生明显偏移，建议评估并适当调整推荐策略。
+              </div>
+            </div>
+            <div class="ic-anom-warning-actions">
+              <button class="ic-tool-btn ghost small">稍后再说</button>
+              <button class="ic-tool-btn primary small">查看推荐策略</button>
+            </div>
+          </div>
+
           <div class="ic-anom-list glass-panel">
             <div class="ic-inner-title">检测到的异常（{{ anomalies.length }}）</div>
             <div class="ic-anom-items soft-scrollbar">
               <div v-for="a in anomalies" :key="a.day" class="ic-anom-item">
-                <div class="ic-anom-day">{{ a.day }}</div>
+                <div class="ic-anom-left">
+                  <div class="ic-anom-day">{{ a.day }}</div>
+                  <div class="ic-anom-tag" :class="`type-${a.type}`">
+                    {{ a.typeLabel }}
+                  </div>
+                </div>
                 <div class="ic-anom-meta">
                   <div>值：<b>{{ a.value }}</b></div>
                   <div>Z：<b>{{ a.z.toFixed(2) }}</b></div>
+                  <div class="ic-anom-extra">
+                    <span class="ic-anom-reason">{{ a.reason }}</span>
+                    <span v-if="a.projectedShiftPct" class="ic-anom-pred">
+                      若持续 3 天，该方向权重预计变化 {{ a.projectedShiftPct }}%
+                    </span>
+                  </div>
                 </div>
               </div>
               <div v-if="!anomalies.length" class="ic-hint">未检测到异常波动</div>
@@ -338,7 +528,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as echarts from 'echarts'
-import { fetchInsightEvents } from '../api'
+import { fetchBehaviorSankey, fetchInsightEvents, fetchInsightSemanticDiff, fetchVectorDrift } from '../api'
 
 const props = defineProps({
   userId: { type: String, required: true },
@@ -373,6 +563,8 @@ const anomaly = reactive({
 
 const drill = reactive({
   category: '',
+  productId: '',
+  productName: '',
 })
 
 const loading = ref(false)
@@ -387,6 +579,8 @@ const compareRef = ref(null)
 const anomalyRef = ref(null)
 const drillDonutRef = ref(null)
 const drillTrendRef = ref(null)
+const vectorDriftRef = ref(null)
+const sankeyRef = ref(null)
 
 let donutChart = null
 let trendChart = null
@@ -394,6 +588,8 @@ let compareChart = null
 let anomalyChart = null
 let drillDonutChart = null
 let drillTrendChart = null
+let vectorDriftChart = null
+let sankeyChart = null
 
 const formatCategory = (c) => {
   if (!c) return '-'
@@ -521,7 +717,171 @@ const drillTopProducts = computed(() => {
 
 const compareSummary = reactive({ aTotal: 0, bTotal: 0, deltaPct: 0 })
 
+// 语义差分看板 & AI 叙事（数据对比 Tab）
+const semanticDiff = ref(null)
+const semanticLoading = ref(false)
+const semanticError = ref('')
+
 const anomalies = ref([])
+const sankeyReady = ref(false)
+
+const buildVectorDriftOption = (payload, focusProductId, focusProductName) => {
+  if (!payload || !Array.isArray(payload.points) || !payload.points.length) {
+    return {
+      backgroundColor: 'transparent',
+      title: { text: '暂无向量轨迹数据', left: 'center', top: 'middle', textStyle: { color: '#9ca3af', fontSize: 13 } },
+    }
+  }
+
+  const points = payload.points || []
+  const segments = payload.segments || []
+
+  const allPoints = points.map((p) => [p.x, p.y])
+
+  const byStepSemantic = new Map()
+  for (const seg of segments) {
+    if (typeof seg.to_step === 'number' && seg.semantic_shift) {
+      byStepSemantic.set(seg.to_step, seg.semantic_shift)
+    }
+  }
+
+  const focusPoints = points
+    .map((p, idx) => ({ p, idx }))
+    .filter(({ p }) => p.product_id && p.product_id === focusProductId)
+    .map(({ p, idx }) => ({
+      value: [p.x, p.y],
+      step: idx,
+      action: p.action,
+      product_id: p.product_id,
+      delta_norm: p.delta_norm,
+      semantic_shift: byStepSemantic.get(idx),
+    }))
+
+  const scatterAll = points.map((p, idx) => ({
+    value: [p.x, p.y],
+    step: idx,
+    action: p.action,
+    product_id: p.product_id,
+    delta_norm: p.delta_norm,
+    semantic_shift: byStepSemantic.get(idx),
+  }))
+
+  return {
+    backgroundColor: 'transparent',
+    grid: { left: '6%', right: '4%', top: 36, bottom: 28, containLabel: true },
+    tooltip: {
+      trigger: 'item',
+      formatter: (param) => {
+        const d = param.data || {}
+        const step = typeof d.step === 'number' ? d.step : param.dataIndex
+        const action = d.action || 'unknown'
+        const delta = d.delta_norm != null ? Number(d.delta_norm).toFixed(4) : '0.0000'
+        const semantic = d.semantic_shift || '该行为对画像影响有限，用于微调近期兴趣方向。'
+        const pid = d.product_id || ''
+        const productLine = pid && focusProductId && pid === focusProductId ? `<br/>商品：${focusProductName || pid}` : ''
+        return [
+          `Step #${step}`,
+          `行为：${action}`,
+          `向量位移：${delta}`,
+          productLine,
+          `语义：${semantic}`,
+        ]
+          .filter(Boolean)
+          .join('<br/>')
+      },
+    },
+    xAxis: {
+      type: 'value',
+      name: '语义 X',
+      nameLocation: 'middle',
+      nameGap: 24,
+      axisLine: { lineStyle: { color: 'rgba(39,39,47,0.25)' } },
+      axisLabel: { color: '#808089' },
+      splitLine: { lineStyle: { color: 'rgba(39,39,47,0.08)', type: 'dashed' } },
+    },
+    yAxis: {
+      type: 'value',
+      name: '语义 Y',
+      nameLocation: 'middle',
+      nameGap: 28,
+      axisLine: { lineStyle: { color: 'rgba(39,39,47,0.25)' } },
+      axisLabel: { color: '#808089' },
+      splitLine: { lineStyle: { color: 'rgba(39,39,47,0.08)', type: 'dashed' } },
+    },
+    series: [
+      {
+        name: '整体轨迹',
+        type: 'line',
+        data: allPoints,
+        smooth: true,
+        lineStyle: { width: 1.5, color: '#d4d4d8' },
+        symbol: 'none',
+        z: 1,
+      },
+      {
+        name: '所有行为节点',
+        type: 'scatter',
+        data: scatterAll,
+        symbolSize: 6,
+        itemStyle: { color: '#9ca3af' },
+        z: 2,
+      },
+      {
+        name: '当前商品相关节点',
+        type: 'scatter',
+        data: focusPoints,
+        symbolSize: 10,
+        itemStyle: { color: '#fb923c' },
+        z: 3,
+      },
+    ],
+  }
+}
+
+const buildSankeyOption = (payload) => {
+  if (!payload || !Array.isArray(payload.nodes) || !payload.nodes.length) {
+    return {
+      backgroundColor: 'transparent',
+      title: { text: '暂无行为路径数据', left: 'center', top: 'middle', textStyle: { color: '#9ca3af', fontSize: 13 } },
+    }
+  }
+
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'item',
+      formatter: (p) => {
+        if (p.dataType === 'edge') {
+          return `${p.data.source} → ${p.data.target}<br/>次数：${p.data.value}`
+        }
+        return `${p.name}`
+      },
+    },
+    series: [
+      {
+        type: 'sankey',
+        data: payload.nodes,
+        links: payload.links,
+        top: 10,
+        left: '5%',
+        right: '10%',
+        bottom: 10,
+        nodeAlign: 'justify',
+        nodeGap: 14,
+        nodeWidth: 12,
+        label: { color: '#374151', fontSize: 11 },
+        lineStyle: {
+          color: 'gradient',
+          opacity: 0.45,
+        },
+        emphasis: {
+          focus: 'adjacency',
+          lineStyle: { opacity: 0.8 },
+        },
+      },
+    ],
+  }
+}
 
 const fetchData = async () => {
   loading.value = true
@@ -536,6 +896,61 @@ const fetchData = async () => {
     raw.value = { overview: data.overview, events: data.events }
   } finally {
     loading.value = false
+  }
+}
+
+const initOrUpdateVectorDriftChart = async () => {
+  if (!drill.productId) return
+  await nextTick()
+  if (vectorDriftRef.value && !vectorDriftChart) vectorDriftChart = echarts.init(vectorDriftRef.value)
+
+  const { data } = await fetchVectorDrift(props.userId, { max_events: 120 })
+  const option = buildVectorDriftOption(data, drill.productId, drill.productName)
+  vectorDriftChart?.setOption(option, true)
+}
+
+const initOrUpdateSankeyChart = async () => {
+  await nextTick()
+  if (sankeyRef.value && !sankeyChart) sankeyChart = echarts.init(sankeyRef.value)
+
+  const { data } = await fetchBehaviorSankey(props.userId, { limit: 500 })
+  sankeyReady.value = Array.isArray(data.nodes) && data.nodes.length > 0
+  const option = buildSankeyOption(data)
+  sankeyChart?.setOption(option, true)
+}
+
+const renderSemanticDiff = async () => {
+  // 只有在两个时间段都启用且选择了完整日期范围时才触发 AI 语义对比
+  if (
+    !compare.a.enabled ||
+    !compare.b.enabled ||
+    !compare.a.start ||
+    !compare.a.end ||
+    !compare.b.start ||
+    !compare.b.end
+  ) {
+    semanticDiff.value = null
+    semanticError.value = ''
+    return
+  }
+
+  semanticLoading.value = true
+  semanticError.value = ''
+  try {
+    const params = {
+      a_start: compare.a.start,
+      a_end: compare.a.end,
+      b_start: compare.b.start,
+      b_end: compare.b.end,
+    }
+    const { data } = await fetchInsightSemanticDiff(props.userId, params)
+    semanticDiff.value = data
+  } catch (err) {
+    console.error('语义差分对比加载失败：', err)
+    semanticError.value = 'AI 语义差分暂不可用，可稍后重试。'
+    semanticDiff.value = null
+  } finally {
+    semanticLoading.value = false
   }
 }
 
@@ -571,6 +986,13 @@ const initOrUpdateDrillCharts = async () => {
 
   drillDonutChart?.setOption(buildDonutOption(actionItems, '行为分布'), true)
   drillTrendChart?.setOption(buildTrendOption(dailySeriesFromEvents(drillEvents.value), '类目事件量'), true)
+}
+
+const handleClickProduct = async (p) => {
+  drill.productId = p.product_id
+  drill.productName = p.product_name || p.product_id
+  await initOrUpdateVectorDriftChart()
+  await initOrUpdateSankeyChart()
 }
 
 const renderCompare = async () => {
@@ -638,6 +1060,9 @@ const renderCompare = async () => {
     },
     true,
   )
+
+  // 同步触发语义差分看板的 AI 解析
+  await renderSemanticDiff()
 }
 
 const renderAnomaly = async () => {
@@ -650,15 +1075,102 @@ const renderAnomaly = async () => {
   const variance =
     values.length > 1 ? values.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / (values.length - 1) : 0
   const std = Math.sqrt(variance) || 1
+  const threshold = Number(anomaly.sensitivity || 2.2)
+
+  // 简单线性回归：用于预测未来 3 天若趋势持续，事件量会到什么水平
+  let slope = 0
+  let intercept = mean
+  if (values.length >= 3) {
+    const n = values.length
+    let sumX = 0
+    let sumY = 0
+    let sumXY = 0
+    let sumX2 = 0
+    for (let i = 0; i < n; i++) {
+      const x = i
+      const y = values[i]
+      sumX += x
+      sumY += y
+      sumXY += x * y
+      sumX2 += x * x
+    }
+    const denom = n * sumX2 - sumX * sumX
+    if (denom !== 0) {
+      slope = (n * sumXY - sumX * sumY) / denom
+      intercept = (sumY - slope * sumX) / n
+    }
+  }
+
+  const predictAt = (x) => intercept + slope * x
+  const futureIndex = values.length + 3
+  const futureValue = predictAt(futureIndex)
+  const futureZ = std > 0 ? (futureValue - mean) / std : 0
+  const willProfileShiftGlobally = futureZ >= 2.5 && slope > 0
 
   const out = []
   for (let i = 0; i < series.length; i++) {
     const z = (values[i] - mean) / std
-    if (Math.abs(z) >= Number(anomaly.sensitivity || 2.2)) {
-      out.push({ day: series[i].day, value: values[i], z })
+    if (Math.abs(z) >= threshold) {
+      out.push({ day: series[i].day, value: values[i], z, index: i })
     }
   }
-  anomalies.value = out
+
+  // 对异常点做简单语义分类：突发性强意图 / 新兴趣发现 / 行为骤减
+  const detailed = out.map((a) => {
+    const idx = a.index
+    const n = values.length
+    const winStart = Math.max(0, idx - 2)
+    const winEnd = Math.min(n - 1, idx + 2)
+    const neighborValues = []
+    for (let k = winStart; k <= winEnd; k++) {
+      if (k === idx) continue
+      neighborValues.push(values[k])
+    }
+    const neighborMean =
+      neighborValues.length > 0 ? neighborValues.reduce((acc, v) => acc + v, 0) / neighborValues.length : mean
+    const localRatio = neighborMean > 0 ? a.value / neighborMean : 0
+
+    let type = 'new'
+    let typeLabel = '新兴趣发现'
+    let reason = '该日期的行为量相较周边有持续抬升，可能代表一个新兴兴趣方向正在形成。'
+
+    if (a.z >= threshold) {
+      // 正向异常
+      if (localRatio >= 1.6) {
+        type = 'strong'
+        typeLabel = '突发性强意图'
+        reason = '该日行为量远高于周边，且呈尖刺形态，更像是一次性强需求或紧急意图。'
+      } else {
+        type = 'new'
+        typeLabel = '新兴趣发现'
+        reason = '该日行为量在整体上扬趋势中明显偏高，疑似一个新的兴趣主题正在被持续探索。'
+      }
+    } else {
+      // 负向异常
+      type = 'drop'
+      typeLabel = '行为骤减'
+      reason = '该日行为量显著低于常态，可能是该方向兴趣下降或外部因素导致。'
+    }
+
+    // 预测 3 天后的权重偏移幅度（用未来 Z 分数粗略映射为百分比）
+    const projectedShiftScore = Math.max(-3, Math.min(3, futureZ))
+    const projectedShiftPct =
+      projectedShiftScore !== 0 ? Math.round(Math.max(5, Math.min(60, Math.abs(projectedShiftScore) * 10))) : 0
+
+    return {
+      ...a,
+      type,
+      typeLabel,
+      reason,
+      projectedShiftPct,
+      willShiftProfile: willProfileShiftGlobally && (type === 'new' || type === 'strong'),
+    }
+  })
+
+  anomalies.value = detailed
+
+  const upperBand = values.map(() => mean + threshold * std)
+  const lowerBand = values.map(() => mean - threshold * std)
 
   anomalyChart?.setOption(
     {
@@ -687,9 +1199,23 @@ const renderAnomaly = async () => {
           lineStyle: { width: 2.4, color: '#f97316' },
         },
         {
+          name: '上置信边界',
+          type: 'line',
+          data: upperBand,
+          symbol: 'none',
+          lineStyle: { width: 1.2, type: 'dashed', color: 'rgba(59,130,246,0.7)' },
+        },
+        {
+          name: '下置信边界',
+          type: 'line',
+          data: lowerBand,
+          symbol: 'none',
+          lineStyle: { width: 1.2, type: 'dashed', color: 'rgba(59,130,246,0.4)' },
+        },
+        {
           name: '异常点',
           type: 'scatter',
-          data: out.map((a) => [a.day, a.value]),
+          data: detailed.map((a) => [a.day, a.value]),
           symbolSize: 12,
           itemStyle: { color: '#ef4444' },
         },
@@ -723,6 +1249,8 @@ const goDrillCategory = async (cat) => {
 
 const resetDrill = () => {
   drill.category = ''
+  drill.productId = ''
+  drill.productName = ''
 }
 
 const filterEventsByRange = (evs, start, end) => {
@@ -802,6 +1330,8 @@ const resizeAll = () => {
   anomalyChart?.resize()
   drillDonutChart?.resize()
   drillTrendChart?.resize()
+  vectorDriftChart?.resize()
+  sankeyChart?.resize()
 }
 
 watch(
@@ -847,6 +1377,8 @@ onBeforeUnmount(() => {
   anomalyChart?.dispose()
   drillDonutChart?.dispose()
   drillTrendChart?.dispose()
+  vectorDriftChart?.dispose()
+  sankeyChart?.dispose()
 })
 </script>
 
@@ -1433,13 +1965,19 @@ onBeforeUnmount(() => {
 
 .ic-anom-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
   padding: 8px 10px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.7);
   box-shadow: 0 0 0 1px rgba(229, 231, 235, 0.9);
+}
+
+.ic-anom-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .ic-anom-day {
@@ -1453,6 +1991,334 @@ onBeforeUnmount(() => {
   gap: 12px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.ic-anom-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 280px;
+}
+
+.ic-anom-reason {
+  font-size: 11px;
+}
+
+.ic-anom-pred {
+  font-size: 11px;
+  color: #2563eb;
+}
+
+.ic-anom-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 0 0 1px rgba(229, 231, 235, 0.9);
+}
+
+.ic-anom-tag.type-strong {
+  background: rgba(251, 146, 60, 0.12);
+  color: #9a3412;
+  box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.4);
+}
+
+.ic-anom-tag.type-new {
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.38);
+}
+
+.ic-anom-tag.type-drop {
+  background: rgba(239, 68, 68, 0.08);
+  color: #b91c1c;
+  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.4);
+}
+
+.ic-anom-warning {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ic-anom-warning-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ic-anom-warning-title {
+  font-size: 13px;
+  font-weight: 650;
+  color: #111827;
+}
+
+.ic-anom-warning-text {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ic-anom-warning-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.ic-tool-btn.small {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+/* 语义差分看板 & 健康度 */
+.ic-semantic-card {
+  margin-top: 12px;
+  border-radius: 18px;
+}
+
+.ic-semantic-head {
+  align-items: center;
+}
+
+.ic-semantic-status .error {
+  color: #ef4444;
+}
+
+.ic-semantic-body {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ic-semantic-summary {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #111827;
+}
+
+.ic-focus-shift-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.ic-focus-pill {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(229, 231, 235, 0.9);
+}
+
+.ic-focus-pill .label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ic-focus-pill .value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.ic-focus-arrow {
+  font-size: 16px;
+  color: var(--text-muted);
+}
+
+.ic-intent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: rgba(249, 115, 22, 0.08);
+  color: #92400e;
+  box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.3);
+}
+
+.ic-intent-chip .num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.ic-intent-chip.up {
+  background: rgba(22, 163, 74, 0.08);
+  color: #14532d;
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.35);
+}
+
+.ic-intent-chip.down {
+  background: rgba(239, 68, 68, 0.06);
+  color: #7f1d1d;
+  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.35);
+}
+
+.ic-focus-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ic-semantic-dims {
+  max-height: 180px;
+  padding-right: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ic-dim-row {
+  padding: 6px 8px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 0 0 1px rgba(229, 231, 235, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ic-dim-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ic-dim-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.ic-dim-bars {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.ic-dim-bar .label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ic-dim-bar .bar {
+  margin-top: 2px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.9);
+  overflow: hidden;
+}
+
+.ic-dim-bar .fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(to right, #bfdbfe, #60a5fa);
+}
+
+.ic-dim-bar.after .fill {
+  background: linear-gradient(to right, #fed7aa, #fb923c);
+}
+
+.ic-dim-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ic-dim-meta .delta {
+  font-variant-numeric: tabular-nums;
+}
+
+.ic-dim-meta .delta.up {
+  color: #16a34a;
+  font-weight: 650;
+}
+
+.ic-dim-meta .delta.down {
+  color: #ef4444;
+  font-weight: 650;
+}
+
+.ic-health-row {
+  margin-top: 2px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.ic-health-block {
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(229, 231, 235, 0.9);
+}
+
+.ic-health-block.suggestion {
+  grid-column: span 1;
+}
+
+.ic-health-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #111827;
+}
+
+.ic-health-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  box-shadow: 0 0 10px rgba(148, 163, 184, 0.4);
+}
+
+.ic-health-dot.status-good {
+  background: radial-gradient(circle, #34d399, #16a34a);
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.6);
+}
+
+.ic-health-dot.status-warning {
+  background: radial-gradient(circle, #facc15, #eab308);
+  box-shadow: 0 0 12px rgba(234, 179, 8, 0.55);
+}
+
+.ic-health-dot.status-bad {
+  background: radial-gradient(circle, #fb7185, #ef4444);
+  box-shadow: 0 0 12px rgba(248, 113, 113, 0.6);
+}
+
+.ic-health-tag {
+  margin-top: 4px;
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(248, 250, 252, 0.9);
+  color: var(--text-muted);
+}
+
+.ic-health-text {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ic-semantic-empty {
+  margin-top: 4px;
 }
 
 @media (max-width: 1024px) {
@@ -1473,6 +2339,9 @@ onBeforeUnmount(() => {
     grid-template-columns: minmax(0, 1fr);
   }
   .ic-mini-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ic-health-row {
     grid-template-columns: minmax(0, 1fr);
   }
 }

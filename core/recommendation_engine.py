@@ -5,6 +5,7 @@
 
 import os
 import pickle
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from collections import defaultdict
@@ -14,10 +15,39 @@ import numpy as np
 
 from config.settings import settings
 from data.models import User, Product, UserAction, Recommendation
+from module_rag_ai.deepseek_agent import DeepSeekAgent
+from module_rag_ai.multimodal_embedding import ChineseCLIPEmbedder
+from module_rag_ai.vector_db_manager import VectorDBManager
 from utils.logger import get_logger
 from utils.exceptions import ModelError, ValidationError
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class QueryIntent:
+    """
+    查询意图解析结果的数据结构。
+
+    该结构将作为后续 Hybrid Recall + Rerank 的输入之一。
+    """
+
+    normalized_query: str
+    # 用于向量检索的文本表示（可以更紧凑、更贴近商品语义）
+    search_vector_text: str
+    # 解析出的主品类，如 "手机"、"耳机"；不确定时为空字符串
+    category: str = ""
+    # 价格区间（单位与商品价格字段保持一致，一般为元）
+    price_min: Optional[float] = None
+    price_max: Optional[float] = None
+    # 风格/偏好标签，如 ["极简", "科技感"]
+    style_tags: List[str] | None = None
+    # 必须满足的关键诉求词，如 ["降噪", "轻薄"]
+    must_have_keywords: List[str] | None = None
+    # 需要明显排除的特征，如 ["二手", "翻新"]
+    exclude_keywords: List[str] | None = None
+    # 推荐排序侧重：relevance / price_asc / price_desc / popularity
+    sort_by: str = "relevance"
 
 
 class RecommendationEngine:
@@ -28,6 +58,190 @@ class RecommendationEngine:
         self.product_embeddings: Dict[str, np.ndarray] = {}
         self.user_profiles: Dict[str, np.ndarray] = {}
         self._load_embeddings()
+
+
+class SmartRecommendationEngine:
+    """
+    新一代“智能推荐引擎”，负责协调：
+    - 查询意图解析（DeepSeek）
+    - 后续 Hybrid Recall + Rerank（后续步骤实现）
+
+    当前阶段仅实现 analyze_intent，用于驱动后续检索。
+    """
+
+    def __init__(
+        self,
+        deepseek_agent: Optional[DeepSeekAgent] = None,
+        vector_db: Optional[VectorDBManager] = None,
+        embedder: Optional[ChineseCLIPEmbedder] = None,
+    ):
+        self.deepseek_agent = deepseek_agent or DeepSeekAgent()
+        # Hybrid Recall 所需组件：向量库 + 文本编码器
+        self.vector_db = vector_db or VectorDBManager()
+        self.embedder = embedder or ChineseCLIPEmbedder()
+
+    def analyze_intent(
+        self,
+        user_id: str,
+        query: str,
+        user_profile: Optional[Dict[str, Any]] = None,
+        history: Optional[List[Dict[str, Any]]] = None,
+        timeout: int = 30,
+    ) -> QueryIntent:
+        """
+        调用 DeepSeek 对自然语言查询进行“意图解析”，返回结构化 QueryIntent。
+
+        Args:
+            user_id: 用户 ID（可用于 DeepSeek 提示用户画像）
+            query: 原始自然语言查询
+            user_profile: 可选的用户画像字典（来自 users_profile.json 或其他画像系统）
+            history: 可选的历史行为列表（例如最近浏览/点击/购买记录）
+            timeout: DeepSeek 调用超时时间（秒）
+        """
+        logger.info("SmartRecommendationEngine.analyze_intent: user_id=%s, query=%s", user_id, query)
+
+        prompt = self.deepseek_agent.build_intent_prompt(
+            query=query,
+            user_id=user_id,
+            user_profile=user_profile or {},
+            history=history or [],
+        )
+
+        try:
+            resp = self.deepseek_agent.analyze_intent(prompt=prompt, timeout=timeout)
+        except Exception as e:  # noqa: BLE001
+            logger.error("DeepSeek 查询意图解析失败，将使用降级策略。err=%s", e)
+            # 降级策略：直接用原始 query 构造一个最简单的 QueryIntent
+            return QueryIntent(
+                normalized_query=query,
+                search_vector_text=query,
+            )
+
+        # 解析 DeepSeek 返回的 JSON，做健壮性处理
+        normalized_query = str(resp.get("normalized_query") or query)
+        search_vector_text = str(resp.get("search_vector_text") or normalized_query)
+        category = str(resp.get("category") or "") if resp.get("category") is not None else ""
+
+        price_range = resp.get("price_range") or {}
+        price_min = price_range.get("min")
+        price_max = price_range.get("max")
+        try:
+            price_min = float(price_min) if price_min is not None else None
+        except (TypeError, ValueError):
+            price_min = None
+        try:
+            price_max = float(price_max) if price_max is not None else None
+        except (TypeError, ValueError):
+            price_max = None
+
+        def _as_str_list(value: Any) -> List[str] | None:
+            if not value:
+                return None
+            if isinstance(value, list):
+                return [str(v) for v in value if v is not None]
+            # 模型可能误返回字符串，用逗号简单切分
+            if isinstance(value, str):
+                return [s.strip() for s in value.split(",") if s.strip()]
+            return None
+
+        style_tags = _as_str_list(resp.get("style_tags"))
+        must_have_keywords = _as_str_list(resp.get("must_have_keywords"))
+        exclude_keywords = _as_str_list(resp.get("exclude_keywords"))
+
+        sort_by_raw = (resp.get("sort_by") or "relevance").strip().lower()
+        if sort_by_raw not in {"relevance", "price_asc", "price_desc", "popularity"}:
+            sort_by_raw = "relevance"
+
+        intent = QueryIntent(
+            normalized_query=normalized_query,
+            search_vector_text=search_vector_text,
+            category=category,
+            price_min=price_min,
+            price_max=price_max,
+            style_tags=style_tags,
+            must_have_keywords=must_have_keywords,
+            exclude_keywords=exclude_keywords,
+            sort_by=sort_by_raw,
+        )
+
+        logger.info(
+            "SmartRecommendationEngine.analyze_intent 完成: %s",
+            {
+                "normalized_query": intent.normalized_query,
+                "category": intent.category,
+                "price_min": intent.price_min,
+                "price_max": intent.price_max,
+                "sort_by": intent.sort_by,
+            },
+        )
+        return intent
+
+    # --------------------------
+    # Phase2：Hybrid Recall
+    # --------------------------
+
+    def hybrid_recall(
+        self,
+        intent: QueryIntent,
+        top_k: int = 50,
+        include: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        基于 DeepSeek 解析出的 QueryIntent，在 ChromaDB 中做“语义向量 + 结构化过滤”的混合召回。
+
+        返回值为 ChromaDB 的原始 query 结果，包含 ids / metadatas / distances / documents 等字段，
+        便于后续在业务层做 rerank 与商品详情补全。
+        """
+        # 1. 选择用于向量检索的查询文本
+        query_text = (intent.search_vector_text or intent.normalized_query).strip()
+        if not query_text:
+            logger.warning("Hybrid Recall: intent 中缺少可用的查询文本，将返回空结果")
+            return {"ids": [[]], "distances": [[]], "metadatas": [[]], "documents": [[]]}
+
+        # 2. 构造 ChromaDB where 过滤条件（价格区间 + 品类）
+        # Chroma v0.5+ 要求 where 顶层通常只有一个操作符，因此组合多个条件时使用 $and
+        conditions: List[Dict[str, Any]] = []
+
+        if intent.category:
+            # 简单直接按等值过滤；更复杂的“同类目映射”可后续加入
+            conditions.append({"category": intent.category})
+
+        # Chroma v0.5+ 对比较操作也要求每个字段表达式仅包含一个操作符，
+        # 因此价格区间需要拆成两个条件再用 $and 连接。
+        if intent.price_min is not None:
+            conditions.append({"price": {"$gte": float(intent.price_min)}})
+        if intent.price_max is not None:
+            conditions.append({"price": {"$lte": float(intent.price_max)}})
+
+        if len(conditions) == 1:
+            where: Optional[Dict[str, Any]] = conditions[0]
+        elif len(conditions) > 1:
+            where = {"$and": conditions}
+        else:
+            where = None
+
+        # 3. 调用向量库做检索
+        # 注意：Chroma v0.5 的 include 不再支持 "ids"，ids 总是默认返回
+        chroma_include = include or ["metadatas", "distances", "documents"]
+        try:
+            result = self.vector_db.query_by_text(
+                query=query_text,
+                embedder=self.embedder,
+                top_k=top_k,
+                include=chroma_include,
+                where=where,
+            )
+            logger.info(
+                "Hybrid Recall 完成: query=%s, where=%s, top_k=%d, 命中=%d",
+                query_text,
+                where,
+                top_k,
+                len(result.get("ids", [[]])[0]) if result.get("ids") else 0,
+            )
+            return result
+        except Exception as e:  # noqa: BLE001
+            logger.error("Hybrid Recall 召回失败，将返回空结果。err=%s", e)
+            return {"ids": [[]], "distances": [[]], "metadatas": [[]], "documents": [[]]}
 
     def _load_embeddings(self):
         """

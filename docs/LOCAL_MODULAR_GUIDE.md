@@ -27,11 +27,14 @@ python module_rag_ai/vector_db_manager.py
 ## 4. 模块三：启动 FastAPI
 ```bash
 uvicorn module_backend.main_api:app --host 0.0.0.0 --port 8000 --reload
+
+uvicorn module_backend.main_api:app --host 0.0.0.0 --port 8000 --reload
+uvicorn module_backend.main_api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 环境变量：
 ```bash
-export DEEPSEEK_API_KEY=your_api_key_here
+export DEEPSEEK_API_KEY=sk-fa86cd1e1c814e0b90155dd6180d9055
 ```
 
 ## 5. 模块四：启动 Vue 前端

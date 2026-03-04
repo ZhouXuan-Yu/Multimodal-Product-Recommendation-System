@@ -73,8 +73,12 @@
       </div>
       <div class="actions">
         <button class="btn-secondary" @click="$emit('back-to-mall')">返回商城继续逛</button>
-        <button class="btn-primary" :disabled="!items.length" @click="$emit('submit-order')">
-          提交订单
+        <button
+          class="btn-primary"
+          :disabled="!items.length || submitting"
+          @click="$emit('submit-order')"
+        >
+          {{ submitting ? '正在提交...' : '提交订单' }}
         </button>
       </div>
     </footer>
@@ -88,6 +92,10 @@ const props = defineProps({
   items: {
     type: Array,
     default: () => [],
+  },
+  submitting: {
+    type: Boolean,
+    default: false,
   },
 })
 

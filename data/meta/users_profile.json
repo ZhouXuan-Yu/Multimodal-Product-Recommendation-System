@@ -25,9 +25,11 @@
         1,
         1,
         1,
+        1,
+        1,
         1
       ],
-      "activity_score": 67,
+      "activity_score": 69,
       "history": [
         {
           "product_id": "p_4_45",
@@ -67,6 +69,24 @@
             "from": "mall_or_chat"
           },
           "timestamp": "2026-03-04T12:29:40.920094"
+        },
+        {
+          "product_id": "p_4_137",
+          "action": "click",
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-04T13:08:29.257161"
+        },
+        {
+          "product_id": "p_9_137",
+          "action": "click",
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-04T13:15:17.911429"
         }
       ]
     }

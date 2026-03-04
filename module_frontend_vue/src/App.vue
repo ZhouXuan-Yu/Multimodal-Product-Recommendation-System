@@ -55,7 +55,7 @@
       </section>
 
       <!-- 视图 C：个人数据洞察中心 -->
-      <section v-else class="panel panel-analytics glass-elevated">
+      <section v-else-if="activeView === 'analytics'" class="panel panel-analytics glass-elevated">
         <header class="panel-header">
           <div>
             <h2>个人数据洞察中心</h2>
@@ -64,6 +64,15 @@
         </header>
 
         <InsightCenter :user-id="userId" />
+      </section>
+      <!-- 视图 D：购物车结算页 -->
+      <section v-else class="panel panel-cart glass-elevated">
+        <CartCheckout
+          :items="cartItems"
+          @update:items="updateCartItems"
+          @back-to-mall="activeView = 'mall'"
+          @submit-order="() => alert('模拟提交订单成功，后续可接入真实支付流程')"
+        />
       </section>
     </main>
 
@@ -74,6 +83,14 @@
       @recommend-query="handleMallQueryFromChat"
       @item-click="handleItemClick"
     />
+    <!-- 仿淘宝风格的加购弹窗 -->
+    <CartModal
+      :visible="showCartModal"
+      :product="selectedProduct"
+      @close="showCartModal = false"
+      @add-to-cart="addToCart"
+      @checkout="checkoutNow"
+    />
   </div>
 </template>
 
@@ -83,22 +100,30 @@ import InsightCenter from './components/InsightCenter.vue'
 import ProductWaterfall from './components/ProductWaterfall.vue'
 import AIChatWidget from './components/AIChatWidget.vue'
 import RagSearchView from './components/RagSearchView.vue'
+import CartModal from './components/CartModal.vue'
+import CartCheckout from './components/CartCheckout.vue'
 import { logUserAction } from './api'
 
 // 模拟当前登录用户 ID，真实项目中可从登录态或后端获取
 const userId = ref('user_001')
 
-// 当前激活的视图：mall | analytics
+// 当前激活的视图：mall | rag | analytics | cart
 const activeView = ref('mall')
 
 const tabs = [
   { key: 'mall', label: '智能推荐商城' },
   { key: 'rag', label: '本地向量检索' },
   { key: 'analytics', label: '个人数据洞察中心' },
+  { key: 'cart', label: '购物车结算' },
 ]
 
 // 商城区搜索 / AI 导购联动使用的 query
 const mallQuery = ref('')
+
+// 购物车状态
+const showCartModal = ref(false)
+const selectedProduct = ref(null)
+const cartItems = ref([])
 
 // 从 AI 聊天组件中收到“推荐意图”，用于刷新商城视图
 const handleMallQueryFromChat = (queryText) => {
@@ -106,8 +131,11 @@ const handleMallQueryFromChat = (queryText) => {
   activeView.value = 'mall'
 }
 
-// 商品点击时上报行为日志，形成“推荐 → 点击 → 数据回流”的闭环
+// 商品点击时：上报点击日志并打开加购弹窗
 const handleItemClick = async (item) => {
+  selectedProduct.value = item
+  showCartModal.value = true
+
   try {
     await logUserAction({
       user_id: userId.value,
@@ -121,6 +149,28 @@ const handleItemClick = async (item) => {
   } catch (e) {
     console.warn('上报点击日志失败，可忽略不影响主流程', e)
   }
+}
+
+// 加入购物车
+const addToCart = ({ product, quantity }) => {
+  if (!product) return
+  const idx = cartItems.value.findIndex((r) => r.product.product_id === product.product_id)
+  if (idx >= 0) {
+    cartItems.value[idx].quantity += quantity
+  } else {
+    cartItems.value.push({ product, quantity })
+  }
+  showCartModal.value = false
+}
+
+// 立即结算：加入购物车并跳转到结算页
+const checkoutNow = (payload) => {
+  addToCart(payload)
+  activeView.value = 'cart'
+}
+
+const updateCartItems = (next) => {
+  cartItems.value = next
 }
 </script>
 

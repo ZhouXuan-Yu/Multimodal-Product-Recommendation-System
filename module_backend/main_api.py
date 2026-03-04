@@ -7,9 +7,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 from collections import defaultdict, deque
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field
 
 from module_rag_ai.deepseek_agent import DeepSeekAgent
@@ -22,6 +23,49 @@ PRODUCTS_JSON = DATA_DIR / "meta" / "products.json"
 USERS_PROFILE_JSON = DATA_DIR / "meta" / "users_profile.json"
 VECTOR_STORE_DIR = DATA_DIR / "vector_store"
 
+
+class LoggingMiddleware(BaseHTTPMiddleware):
+    """统一请求/响应日志中间件。
+
+    - 每次前端调用后端接口时，打印请求方法、路径、查询参数和请求体（尽量截断为安全长度）；
+    - 每次后端返回响应时，打印对应的状态码；
+    - 已有的业务级别 print（例如 /api/recommend 内部）仍然保留，用于更细粒度的调试。
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        try:
+            body_bytes = await request.body()
+            raw_body = body_bytes.decode("utf-8", errors="ignore") if body_bytes else ""
+        except Exception:  # noqa: BLE001
+            raw_body = "<unreadable>"
+
+        # 为避免日志过长，只打印前 2000 个字符
+        body_preview = raw_body[:2000]
+
+        print(
+            "[backend] HTTP 请求：",
+            {
+                "method": request.method,
+                "path": request.url.path,
+                "query": dict(request.query_params),
+                "body": body_preview,
+            },
+        )
+
+        response = await call_next(request)
+
+        print(
+            "[backend] HTTP 响应：",
+            {
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+            },
+        )
+
+        return response
+
+
 app = FastAPI(title="Multimodal Recommendation API", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
@@ -30,6 +74,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(LoggingMiddleware)
 app.mount("/static/images", StaticFiles(directory=str(DATA_DIR / "images")), name="images")
 
 

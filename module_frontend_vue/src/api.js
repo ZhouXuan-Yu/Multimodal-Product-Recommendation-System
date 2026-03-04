@@ -3,10 +3,14 @@
 
 import axios from 'axios'
 
-// 开发环境推荐保持同源，通过 Vite proxy 转发到后端（见 vite.config.js）。
-// 如需直连后端，可在 .env.local 中设置：VITE_API_BASE_URL=http://127.0.0.1:8000
-// 若未显式配置，则默认直连本机后端，避免代理异常时出现 404。
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+// 开发环境推荐保持「前端和后端同源」，通过 Vite proxy 转发到 FastAPI（见 vite.config.js）。
+// 默认走同源（BASE_URL 为空字符串），这样：
+//   - 你在自己电脑上访问 http://localhost:5173，前端会请求 http://localhost:5173/api/...
+//   - 你在手机 / 其他电脑上访问 http://192.168.x.x:5173，前端会请求 http://192.168.x.x:5173/api/...
+//   - 再由 Vite 代理到真正的后端 http://127.0.0.1:8000，避免在其他设备上 127.0.0.1 指向「自己那台设备」导致 Network Error。
+// 如需跳过代理、直连 FastAPI，可在 .env.local 中设置：
+//   VITE_API_BASE_URL=http://127.0.0.1:8000
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
 const instance = axios.create({
   baseURL: BASE_URL,

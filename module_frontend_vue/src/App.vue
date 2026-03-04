@@ -42,7 +42,19 @@
         />
       </section>
 
-      <!-- 视图 B：个人数据洞察中心 -->
+      <!-- 视图 B：本地向量检索（RAG 召回） -->
+      <section v-else-if="activeView === 'rag'" class="panel panel-rag glass-elevated">
+        <header class="panel-header">
+          <div>
+            <h2>本地向量检索</h2>
+            <p class="subtitle">直接从本地 Chroma 向量库检索 Top-K（不走 LLM）</p>
+          </div>
+        </header>
+
+        <RagSearchView @item-click="handleItemClick" />
+      </section>
+
+      <!-- 视图 C：个人数据洞察中心 -->
       <section v-else class="panel panel-analytics glass-elevated">
         <header class="panel-header">
           <div>
@@ -70,6 +82,7 @@ import { ref } from 'vue'
 import InsightCenter from './components/InsightCenter.vue'
 import ProductWaterfall from './components/ProductWaterfall.vue'
 import AIChatWidget from './components/AIChatWidget.vue'
+import RagSearchView from './components/RagSearchView.vue'
 import { logUserAction } from './api'
 
 // 模拟当前登录用户 ID，真实项目中可从登录态或后端获取
@@ -80,6 +93,7 @@ const activeView = ref('mall')
 
 const tabs = [
   { key: 'mall', label: '智能推荐商城' },
+  { key: 'rag', label: '本地向量检索' },
   { key: 'analytics', label: '个人数据洞察中心' },
 ]
 

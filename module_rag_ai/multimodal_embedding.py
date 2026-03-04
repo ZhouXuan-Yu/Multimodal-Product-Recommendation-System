@@ -39,7 +39,26 @@ class ChineseCLIPEmbedder:
     def encode_text(self, text: str) -> np.ndarray:
         """编码单条文本为归一化向量。"""
         inputs = self.processor(text=[text], return_tensors="pt", padding=True).to(self.device)
-        text_features = self.model.get_text_features(**inputs)
+        try:
+            # transformers 某些版本在 ChineseCLIPModel.get_text_features 内部 pooled_output 可能为 None
+            text_features = self.model.get_text_features(**inputs)
+        except TypeError:
+            text_features = None
+
+        if text_features is None:
+            # 兜底：走 text_model 前向，用 CLS token（或第一个 token）做 pooled embedding，再过 projection
+            # 返回维度与 get_text_features 保持一致
+            text_outputs = self.model.text_model(
+                input_ids=inputs.get("input_ids"),
+                attention_mask=inputs.get("attention_mask"),
+                token_type_ids=inputs.get("token_type_ids"),
+                output_hidden_states=False,
+                return_dict=True,
+            )
+            last_hidden = text_outputs.last_hidden_state  # [B, T, H]
+            pooled = last_hidden[:, 0, :]  # CLS
+            text_features = self.model.text_projection(pooled)
+
         text_features = torch.nn.functional.normalize(text_features, dim=-1)
         return text_features[0].detach().cpu().numpy().astype(np.float32)
 
@@ -48,6 +67,7 @@ class ChineseCLIPEmbedder:
         """编码单张图片为归一化向量。"""
         image = Image.open(image_path).convert("RGB")
         inputs = self.processor(images=image, return_tensors="pt").to(self.device)
+        # get_image_features 一般是稳定的，但也保持一致的安全处理
         image_features = self.model.get_image_features(**inputs)
         image_features = torch.nn.functional.normalize(image_features, dim=-1)
         return image_features[0].detach().cpu().numpy().astype(np.float32)

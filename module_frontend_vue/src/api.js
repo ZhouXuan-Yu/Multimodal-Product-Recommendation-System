@@ -5,7 +5,8 @@ import axios from 'axios'
 
 // 开发环境推荐保持同源，通过 Vite proxy 转发到后端（见 vite.config.js）。
 // 如需直连后端，可在 .env.local 中设置：VITE_API_BASE_URL=http://127.0.0.1:8000
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+// 若未显式配置，则默认直连本机后端，避免代理异常时出现 404。
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 
 const instance = axios.create({
   baseURL: BASE_URL,
@@ -58,6 +59,12 @@ export function chatWithAI(payload) {
   // payload: { user_id, message, context? }
   // 后端建议返回：{ reply: string, product_suggestions?: Array<{product_id, name, price, image_url, reason}> }
   return instance.post('/api/ai_chat', payload)
+}
+
+// 本地向量库检索（不走 LLM），用于直接展示 RAG 召回结果
+export function ragSearch(params) {
+  // params: { q, top_k }
+  return instance.get('/api/rag_search', { params })
 }
 
 export { BASE_URL, instance as axiosInstance }

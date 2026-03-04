@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import sys
 import json
 from pathlib import Path
-from typing import Any, Callable, Iterable, Tuple
+from typing import Any
 
 import chromadb
 
-from module_rag_ai.multimodal_embedding import ChineseCLIPEmbedder
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-# 统一使用 data/meta/products.json 作为商品主数据源，便于与后端 /api/recommend 保持一致
 PRODUCTS_JSON = PROJECT_ROOT / "data" / "meta" / "products.json"
 VECTOR_STORE_DIR = PROJECT_ROOT / "data" / "vector_store"
+
+# 允许以脚本形式运行（python module_rag_ai/vector_db_manager.py）时也能正确 import 包内模块
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from module_rag_ai.multimodal_embedding import ChineseCLIPEmbedder
 
 
 class VectorDBManager:
@@ -23,112 +27,55 @@ class VectorDBManager:
         self.client = chromadb.PersistentClient(path=str(VECTOR_STORE_DIR))
         self.collection = self.client.get_or_create_collection(name=collection_name)
 
-    def _build_record(
-        self,
-        item: dict[str, Any],
-        embedder: ChineseCLIPEmbedder,
-    ) -> Tuple[str, list[float], dict[str, Any], str] | None:
-        """单条商品 → 向量与元数据的构建逻辑（可被多线程复用）。"""
-        # 兼容不同数据字段：processed/products.json 使用 title；早期版本可能是 name
-        title = item.get("title") or item.get("name") or ""
-        description = item.get("description") or item.get("description_text") or ""
-        category = item.get("category") or ""
-        text = f"{title}。{description}。分类：{category}"
+    def upsert_products(self, products: list[dict[str, Any]], embedder: ChineseCLIPEmbedder) -> int:
+        """将商品多模态向量与元数据写入向量库。"""
+        ids: list[str] = []
+        embeddings: list[list[float]] = []
+        metadatas: list[dict[str, Any]] = []
+        documents: list[str] = []
 
-        image_path_value = item.get("image_path")
-        image_path = PROJECT_ROOT / image_path_value if image_path_value else None
-
-        # 图片可选：如果找不到图片，就退化为纯文本向量，避免整条商品被跳过
-        if image_path is not None and image_path.exists():
-            vector = embedder.encode_multimodal(image_path=image_path, text=text)
-        else:
-            vector = embedder.encode_text(text)
-
-        metadata = {
-            "name": title,
-            "category": category,
-            "price": float(item.get("price", 0.0)),
-            "image_path": image_path_value,
-        }
-        return item["product_id"], vector.tolist(), metadata, text
-
-    def upsert_products(
-        self,
-        products: list[dict[str, Any]],
-        embedder: ChineseCLIPEmbedder,
-        max_workers: int = 4,
-        batch_size: int = 256,
-    ) -> int:
-        """将商品多模态向量与元数据写入向量库。
-
-        - 使用线程池并行编码文本/图片，以提升 3000+ 商品场景下的入库速度。
-        - 为了避免对 Chroma 产生过多小批次写入，仍然按批次进行 upsert。
-        """
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        if not products:
-            return 0
-
-        # 预先按 product_id 去重，避免 Chroma 报错 "Expected IDs to be unique"
-        unique_products: dict[str, dict[str, Any]] = {}
         for item in products:
-            pid = item.get("product_id")
+            image_path = PROJECT_ROOT / item["image_path"]
+            if not image_path.exists():
+                continue
+
+            text = f"{item.get('name','')}。{item.get('description','')}。分类：{item.get('category','')}"
+            vector = embedder.encode_multimodal(image_path=image_path, text=text)
+
+            pid = str(item.get("product_id") or "")
             if not pid:
                 continue
-            unique_products[pid] = item
-        products_dedup = list(unique_products.values())
-
-        if len(products_dedup) != len(products):
-            print(
-                f"[vector_db] 检测到重复或缺失 product_id 的商品，"
-                f"原始数量={len(products)}，去重后={len(products_dedup)}"
-            )
-
-        products = products_dedup
-
-        max_workers = max(1, max_workers)
-        total = 0
-
-        def iter_batches(items: list[dict[str, Any]], size: int) -> Iterable[list[dict[str, Any]]]:
-            for i in range(0, len(items), size):
-                yield items[i : i + size]
-
-        for batch in iter_batches(products, batch_size):
-            ids: list[str] = []
-            embeddings: list[list[float]] = []
-            metadatas: list[dict[str, Any]] = []
-            documents: list[str] = []
-
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_idx = {
-                    executor.submit(self._build_record, item, embedder): idx for idx, item in enumerate(batch)
+            ids.append(pid)
+            embeddings.append(vector.tolist())
+            metadatas.append(
+                {
+                    "product_id": pid,
+                    "name": item["name"],
+                    "category": item["category"],
+                    "price": float(item["price"]),
+                    "image_path": item["image_path"],
+                    "source_url": item.get("source_url", ""),
                 }
-                # 按完成顺序收集结果，保留全部有效记录
-                for future in as_completed(future_to_idx):
-                    record = future.result()
-                    if record is None:
-                        continue
-                    pid, vec, meta, doc = record
-                    ids.append(pid)
-                    embeddings.append(vec)
-                    metadatas.append(meta)
-                    documents.append(doc)
+            )
+            documents.append(text)
 
-            if ids:
-                self.collection.upsert(
-                    ids=ids,
-                    embeddings=embeddings,
-                    metadatas=metadatas,
-                    documents=documents,
-                )
-                total += len(ids)
+        if ids:
+            self.collection.upsert(ids=ids, embeddings=embeddings, metadatas=metadatas, documents=documents)
+        return len(ids)
 
-        return total
-
-    def query_by_text(self, query: str, embedder: ChineseCLIPEmbedder, top_k: int = 3) -> dict[str, Any]:
+    def query_by_text(
+        self,
+        query: str,
+        embedder: ChineseCLIPEmbedder,
+        top_k: int = 3,
+        include: list[str] | None = None,
+    ) -> dict[str, Any]:
         """将自然语言查询向量化后检索 Top-K。"""
         query_vector = embedder.encode_text(query).tolist()
-        return self.collection.query(query_embeddings=[query_vector], n_results=top_k)
+        kwargs: dict[str, Any] = {"query_embeddings": [query_vector], "n_results": top_k}
+        if include is not None:
+            kwargs["include"] = include
+        return self.collection.query(**kwargs)
 
 
 def load_products() -> list[dict[str, Any]]:

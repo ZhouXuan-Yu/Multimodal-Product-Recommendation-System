@@ -84,6 +84,8 @@ class ActionLogRequest(BaseModel):
     action: str = Field(..., examples=["click", "view", "buy"])
     # 可选的权重和标签，用于个性化推荐算法
     weight: float | None = Field(default=None, description="该行为在个性化模型中的权重")
+    # 前端可附加额外上下文（例如：来源页面、曝光位、实验分桶等）
+    extra: dict[str, Any] | None = Field(default=None, description="可选的扩展上下文信息")
 
 
 def read_json(path: Path, default: Any) -> Any:
@@ -145,6 +147,56 @@ def retrieve_top_k(query: str, top_k: int = 10) -> list[dict[str, Any]]:
         p = product_map.get(pid)
         if p:
             output.append(p)
+    return output
+
+
+def retrieve_top_k_with_scores(query: str, top_k: int = 10) -> list[dict[str, Any]]:
+    """本地向量检索（带距离/相似度），用于前端直接展示 RAG 召回结果。"""
+    products: list[dict[str, Any]] = read_json(PRODUCTS_JSON, default=[])
+    product_map = {p.get("product_id"): p for p in products if p.get("product_id")}
+    if not products:
+        return []
+
+    embedder = ChineseCLIPEmbedder()
+    db = VectorDBManager()
+
+    try:
+        collection = db.collection
+        has_count = hasattr(collection, "count")
+        if has_count and collection.count() == 0:
+            return []
+    except Exception as exc:  # noqa: BLE001
+        print("[backend] VectorDB 访问失败（rag_search），将返回空列表:", exc)
+        return []
+
+    result = db.query_by_text(
+        query=query,
+        embedder=embedder,
+        top_k=top_k,
+        include=["distances", "metadatas", "documents"],
+    )
+    ids = result.get("ids", [[]])[0]
+    distances = result.get("distances", [[]])[0]
+
+    output: list[dict[str, Any]] = []
+    for idx, pid in enumerate(ids):
+        p = product_map.get(pid)
+        if not p:
+            continue
+        dist = None
+        try:
+            dist = float(distances[idx]) if idx < len(distances) else None
+        except Exception:
+            dist = None
+        similarity = (1.0 - dist) if dist is not None else None
+        output.append(
+            {
+                **p,
+                "distance": dist,
+                "similarity": similarity,
+                "image_url": f"/static/images/{Path(p.get('image_path', '')).name}",
+            }
+        )
     return output
 
 
@@ -248,6 +300,13 @@ def diversify_by_image(
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/rag_search")
+def rag_search(q: str = Query(..., min_length=1), top_k: int = Query(default=20, ge=1, le=100)) -> dict[str, Any]:
+    """直接返回本地向量库 Top-K 检索结果（不走 LLM），用于前端展示检索多样性。"""
+    items = retrieve_top_k_with_scores(query=q, top_k=top_k)
+    return {"query": q, "top_k": top_k, "items": items}
 
 
 @app.get("/api/user_profile/{user_id}")
@@ -584,6 +643,7 @@ def log_action(req: ActionLogRequest) -> dict[str, Any]:
             "product_id": req.product_id,
             "action": req.action,
             "weight": req.weight,
+            "has_extra": bool(req.extra),
         },
     )
     users_doc = read_json(USERS_PROFILE_JSON, default={"users": {}})
@@ -605,6 +665,7 @@ def log_action(req: ActionLogRequest) -> dict[str, Any]:
             "product_id": req.product_id,
             "action": req.action,
             "weight": req.weight,
+            "extra": req.extra,
             "timestamp": datetime.utcnow().isoformat(),
         }
     )

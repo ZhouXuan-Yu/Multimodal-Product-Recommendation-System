@@ -529,6 +529,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import { fetchBehaviorSankey, fetchInsightEvents, fetchInsightSemanticDiff, fetchVectorDrift } from '../api'
+import { mockFetchInsightSemanticDiff } from '../mocks/insightsMock'
 
 const props = defineProps({
   userId: { type: String, required: true },
@@ -943,12 +944,48 @@ const renderSemanticDiff = async () => {
       b_start: compare.b.start,
       b_end: compare.b.end,
     }
+
+    // 先尝试后端 / 通用接口（内部可能已做一次 mock 兜底）
     const { data } = await fetchInsightSemanticDiff(props.userId, params)
-    semanticDiff.value = data
+
+    // 规范化并检查关键字段是否“真有内容”
+    const d = data || {}
+    const board = Array.isArray(d.semantic_diff_board) ? d.semantic_diff_board : []
+    const hasSummary =
+      typeof d.summary_text === 'string' && d.summary_text.trim().length > 0
+    const hasBoard = board.length > 0
+    const hasHealth =
+      !!(d.health &&
+      (d.health.overall_health ||
+        d.health.behavior_depth_health ||
+        d.health.suggested_action))
+
+    // 如果后端没有返回可用内容（字段缺失或全为空），则用前端本地 mock 做二次兜底
+    if (!hasSummary && !hasBoard && !hasHealth) {
+      semanticDiff.value = mockFetchInsightSemanticDiff(props.userId, params)
+    } else {
+      // 同时把语义维度表标准化回组件预期格式，避免出现 undefined 结构导致模板渲染为空
+      semanticDiff.value = {
+        ...d,
+        semantic_diff_board: board,
+      }
+    }
   } catch (err) {
     console.error('语义差分对比加载失败：', err)
-    semanticError.value = 'AI 语义差分暂不可用，可稍后重试。'
-    semanticDiff.value = null
+    // 如果接口异常，同样使用前端 mock 语义结果兜底，保证页面有内容可看
+    try {
+      semanticDiff.value = mockFetchInsightSemanticDiff(props.userId, {
+        a_start: compare.a.start,
+        a_end: compare.a.end,
+        b_start: compare.b.start,
+        b_end: compare.b.end,
+      })
+      semanticError.value = ''
+    } catch (mockErr) {
+      console.error('本地 mock 语义差分生成失败：', mockErr)
+      semanticError.value = 'AI 语义差分暂不可用，可稍后重试。'
+      semanticDiff.value = null
+    }
   } finally {
     semanticLoading.value = false
   }

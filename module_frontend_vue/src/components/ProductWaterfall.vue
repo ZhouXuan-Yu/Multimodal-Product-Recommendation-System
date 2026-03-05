@@ -9,6 +9,13 @@
         placeholder="搜索你感兴趣的商品，如：复古相机、春季风衣..."
         @keyup.enter="handleSearch"
       />
+      <select v-model="category" class="category-select">
+        <option value="all">全部类目</option>
+        <option value="men's clothing">男装</option>
+        <option value="women's clothing">女装</option>
+        <option value="jewelery">珠宝配饰</option>
+        <option value="electronics">数码电子</option>
+      </select>
       <button class="search-btn" @click="handleSearch">搜索</button>
     </section>
 
@@ -136,6 +143,7 @@ const preferenceSubmitting = ref(false)
 
 // 搜索关键词（初始与 props.query 保持同步）
 const keyword = ref('')
+const category = ref('all')
 
 // 格式化价格
 const formatPrice = (value) => {
@@ -163,6 +171,7 @@ const loadRecommendations = async (targetPage = 1) => {
       user_id: props.userId,
       keyword: keyword.value,
       externalQuery: props.query,
+      category: category.value,
       targetPage,
       pageSize,
     })
@@ -171,6 +180,7 @@ const loadRecommendations = async (targetPage = 1) => {
       query: keyword.value || props.query || '',
       page: targetPage,
       page_size: pageSize,
+      category: category.value,
     })
 
     const items = data.items || data.recommendations || []
@@ -327,6 +337,17 @@ onBeforeUnmount(() => {
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(248, 113, 22, 0.4);
   transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.12s ease;
+}
+
+.category-select {
+  min-width: 120px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(248, 250, 252, 0.96);
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #374151;
+  outline: none;
 }
 
 .search-btn:hover {

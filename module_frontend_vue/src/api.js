@@ -2,6 +2,13 @@
 // 使用 axios 实例，便于后续统一处理超时、鉴权、错误上报等逻辑
 
 import axios from 'axios'
+import {
+  mockFetchBehaviorSankey,
+  mockFetchInsightEvents,
+  mockFetchInsightSemanticDiff,
+  mockFetchVectorDrift,
+  syncExternalInsightEvents,
+} from './mocks/insightsMock'
 
 // 开发环境推荐保持「前端和后端同源」，通过 Vite proxy 转发到 FastAPI（见 vite.config.js）。
 // 默认走同源（BASE_URL 为空字符串），这样：
@@ -43,32 +50,79 @@ export function fetchUserProfile(userId) {
   return instance.get(`/api/user_profile/${userId}`)
 }
 
+// 内部工具：优先尝试后端接口，失败或无有效数据时自动回退到本地 mock
+async function withInsightMock(requestFn, mockFn, userId, params = {}) {
+  try {
+    const resp = await requestFn()
+    const data = resp?.data
+    // 如果后端返回了非空数据，就直接用后端
+    if (data && ((Array.isArray(data.events) && data.events.length) || !Array.isArray(data.events))) {
+      return resp
+    }
+  } catch (err) {
+    console.warn('洞察接口异常，回退到本地 mock：', err)
+  }
+  // 兜底：使用本地模拟数据，保持 axios 风格返回体
+  const data = mockFn(userId, params)
+  return { data }
+}
+
 // 洞察中心：获取用户事件流（已在后端 join product 信息，可用于筛选/钻取/对比/异常检测/导出）
-export function fetchInsightEvents(userId, params = {}) {
-  return instance.get(`/api/insights/${userId}/events`, { params })
+export async function fetchInsightEvents(userId, params = {}) {
+  // 特殊逻辑：事件流是所有下游图表的“基线数据”
+  // - 先尝试从后端拿到最新事件
+  // - 然后把这些事件并入本地 mock 仓库（只追加新增的）
+  // - 最终返回“mock 仓库 + 新增数据”下的 overview/events
+  try {
+    const resp = await instance.get(`/api/insights/${userId}/events`, { params })
+    const payload = resp?.data
+    if (payload && Array.isArray(payload.events) && payload.events.length) {
+      const merged = syncExternalInsightEvents(userId, payload.events, params)
+      return { data: merged }
+    }
+  } catch (err) {
+    console.warn('fetchInsightEvents 后端接口异常，使用本地 mock：', err)
+  }
+  const data = mockFetchInsightEvents(userId, params)
+  return { data }
 }
 
 // 洞察中心：获取用户画像向量偏移轨迹（用于向量轨迹图）
 export function fetchVectorDrift(userId, params = {}) {
   // params: { max_events? }
-  return instance.get(`/api/insights/${userId}/vector_drift`, { params })
+  return withInsightMock(
+    () => instance.get(`/api/insights/${userId}/vector_drift`, { params }),
+    mockFetchVectorDrift,
+    userId,
+    params,
+  )
 }
 
 // 洞察中心：获取用户多模态行为路径桑基图数据
 export function fetchBehaviorSankey(userId, params = {}) {
   // params: { limit? }
-  return instance.get(`/api/insights/${userId}/behavior_sankey`, { params })
+  return withInsightMock(
+    () => instance.get(`/api/insights/${userId}/behavior_sankey`, { params }),
+    mockFetchBehaviorSankey,
+    userId,
+    params,
+  )
 }
 
 // 洞察中心：获取两个时间段的语义化对比结果（语义差分看板 + 健康度 + AI 叙事）
 export function fetchInsightSemanticDiff(userId, params = {}) {
   // params: { a_start, a_end, b_start, b_end }
-  return instance.get(`/api/insights/${userId}/semantic_diff`, { params })
+  return withInsightMock(
+    () => instance.get(`/api/insights/${userId}/semantic_diff`, { params }),
+    mockFetchInsightSemanticDiff,
+    userId,
+    params,
+  )
 }
 
 // 获取推荐商品列表（支持 query / 分页，具体参数需与后端对齐）
 export function fetchRecommendations(params) {
-  // 约定 params: { user_id, query, page, page_size }
+  // 约定 params: { user_id, query, page, page_size, category? }
   return instance.post('/api/recommend', params)
 }
 
@@ -87,7 +141,7 @@ export function chatWithAI(payload) {
 
 // 本地向量库检索（不走 LLM），用于直接展示 RAG 召回结果
 export function ragSearch(params) {
-  // params: { q, top_k }
+  // params: { q, top_k, category? }
   return instance.get('/api/rag_search', { params })
 }
 

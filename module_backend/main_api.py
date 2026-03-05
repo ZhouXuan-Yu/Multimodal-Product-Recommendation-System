@@ -32,6 +32,16 @@ USERS_PROFILE_JSON = DATA_DIR / "meta" / "users_profile.json"
 ORDERS_JSON = DATA_DIR / "meta" / "orders.json"
 VECTOR_STORE_DIR = DATA_DIR / "vector_store"
 
+# 当前系统中，前端允许显式选择的稳定商品类目集合
+ALLOWED_PRODUCT_CATEGORIES: set[str] = {
+    "men's clothing",
+    "women's clothing",
+    "jewelery",
+    "electronics",
+}
+# 前端用于表示“全部类目”的特殊占位符
+CATEGORY_ALL_TOKEN = "all"
+
 
 class LoggingMiddleware(BaseHTTPMiddleware):
     """统一请求/响应日志中间件。
@@ -151,12 +161,20 @@ class RecommendRequest(BaseModel):
     - query:   搜索 / 意图文本
     - page:    页码（从 1 开始）
     - page_size: 每页条数，默认与前端保持一致（20）
+    - category: 可选品类过滤（men's clothing / women's clothing / jewelery / electronics / all）
     """
 
     user_id: str = Field(..., examples=["user_001"])
     query: str = Field(..., examples=["适合通勤的简约风外套"])
     page: int = Field(1, ge=1)
     page_size: int = Field(20, ge=1, le=50)
+    category: str | None = Field(
+        default=None,
+        description=(
+            "可选品类过滤，仅支持: men's clothing / women's clothing / jewelery / electronics / all。"
+            " 传入 all 或留空表示不过滤。"
+        ),
+    )
 
 
 class ActionLogRequest(BaseModel):
@@ -234,6 +252,31 @@ def _save_orders_doc(doc: dict[str, Any]) -> None:
     atomic_write_json(ORDERS_JSON, doc)
 
 
+def _normalize_category_param(category: str | None) -> str | None:
+    """
+    统一处理前端传入的 category 参数：
+    - None / "" / "all" 视为不过滤；
+    - 仅允许 ALLOWED_PRODUCT_CATEGORIES 中的值；
+    - 非法值直接返回 400，便于前端快速发现问题。
+    """
+    if category is None:
+        return None
+
+    cat = str(category).strip()
+    if not cat or cat.lower() == CATEGORY_ALL_TOKEN:
+        return None
+
+    if cat not in ALLOWED_PRODUCT_CATEGORIES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported category '{cat}'. Allowed values: "
+                f"{sorted(ALLOWED_PRODUCT_CATEGORIES)} or '{CATEGORY_ALL_TOKEN}'."
+            ),
+        )
+    return cat
+
+
 def _order_from_record(rec: dict[str, Any]) -> Order:
     """将持久化字典还原为 Order 对象。"""
     items_raw = rec.get("items", []) or []
@@ -290,6 +333,9 @@ def _basic_diversify_products(
     products: list[dict[str, Any]],
     *,
     top_k: int | None = None,
+    # 是否允许在补齐阶段放宽“相同图片只出现一次”的限制。
+    # 默认严格不允许同图重复，只有在商品总量远小于期望条数时才会放宽。
+    allow_repeat_image_on_fill: bool = False,
 ) -> list[dict[str, Any]]:
     """
     基础版多样性打散：
@@ -330,22 +376,54 @@ def _basic_diversify_products(
         used_image_keys.add(img_key)
         category_counter[category] = current_cnt + 1
 
-    # 若因为去重导致数量不足，则补齐到 limit（不再做去重限制，保证有结果可看）
+    # 若因为去重导致数量不足，则在“尽量不重复图片”的前提下补齐到 limit
     if len(diversified) < limit:
         seen_ids = {str(x.get("product_id") or "") for x in diversified}
+        local_used_image_keys = set(used_image_keys)
+
+        def _can_use(p: dict[str, Any]) -> bool:
+            pid = str(p.get("product_id") or "")
+            if not pid or pid in seen_ids:
+                return False
+            img_raw = p.get("image_path") or p.get("image_url") or ""
+            img_key = Path(img_raw).name if img_raw else pid
+            # 默认阶段：严格禁止同图重复
+            if not allow_repeat_image_on_fill and img_key in local_used_image_keys:
+                return False
+            return True
+
+        # 第一轮：仍然不允许相同图片重复
         for p in products:
             if len(diversified) >= limit:
                 break
-            pid = str(p.get("product_id") or "")
-            if not pid or pid in seen_ids:
+            if not _can_use(p):
                 continue
+            pid = str(p.get("product_id") or "")
+            img_raw = p.get("image_path") or p.get("image_url") or ""
+            img_key = Path(img_raw).name if img_raw else pid
             diversified.append(p)
             seen_ids.add(pid)
+            local_used_image_keys.add(img_key)
+
+        # 若仍不足且显式允许重复图片，则再放宽一次，仅保证 product_id 去重
+        if allow_repeat_image_on_fill and len(diversified) < limit:
+            for p in products:
+                if len(diversified) >= limit:
+                    break
+                pid = str(p.get("product_id") or "")
+                if not pid or pid in seen_ids:
+                    continue
+                diversified.append(p)
+                seen_ids.add(pid)
 
     return diversified
 
 
-def retrieve_top_k(query: str, top_k: int = 10) -> list[dict[str, Any]]:
+def retrieve_top_k(
+    query: str,
+    top_k: int = 10,
+    category: str | None = None,
+) -> list[dict[str, Any]]:
     """检索层：向量召回 + products.json 反查详情。
 
     - 正常情况下：基于已初始化好的 Chroma 向量库，返回与 query 语义最相近的 Top-K 商品详情；
@@ -379,9 +457,11 @@ def retrieve_top_k(query: str, top_k: int = 10) -> list[dict[str, Any]]:
 
     # 使用批处理 Worker 将 0.1s 内的查询合并为一个 batch 送入 GPU
     query_vec = worker.encode_query(query)
+    where = {"category": category} if category else None
     result = db.collection.query(
         query_embeddings=[query_vec.tolist()],
         n_results=top_k,
+        where=where,
         # Chroma v0.5+ 不再支持在 include 中显式传入 "ids"，
         # ids 默认总是返回，显式传入会触发 "Expected include item ... got ids" 错误。
         # 因此前端只依赖 ids 时，这里直接不传 include。
@@ -399,7 +479,11 @@ def retrieve_top_k(query: str, top_k: int = 10) -> list[dict[str, Any]]:
     return diversified
 
 
-def retrieve_top_k_with_scores(query: str, top_k: int = 10) -> list[dict[str, Any]]:
+def retrieve_top_k_with_scores(
+    query: str,
+    top_k: int = 10,
+    category: str | None = None,
+) -> list[dict[str, Any]]:
     """本地向量检索（带距离/相似度），用于前端直接展示 RAG 召回结果。"""
     products: list[dict[str, Any]] = read_json(PRODUCTS_JSON, default=[])
     product_map = {p.get("product_id"): p for p in products if p.get("product_id")}
@@ -422,9 +506,11 @@ def retrieve_top_k_with_scores(query: str, top_k: int = 10) -> list[dict[str, An
     try:
         # 使用批处理 Worker 将查询编码为向量，并在 Chroma 中检索
         query_vec = worker.encode_query(query)
+        where = {"category": category} if category else None
         result = db.collection.query(
             query_embeddings=[query_vec.tolist()],
             n_results=top_k,
+            where=where,
             # 注意：Chroma v0.5+ 的 include 不支持 "ids"，
             # ids 始终作为基础字段返回，因此无需显式声明。
             include=["distances", "metadatas", "documents"],
@@ -750,10 +836,26 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/rag_search")
-def rag_search(q: str = Query(..., min_length=1), top_k: int = Query(default=20, ge=1, le=100)) -> dict[str, Any]:
+def rag_search(
+    q: str = Query(..., min_length=1),
+    top_k: int = Query(default=20, ge=1, le=100),
+    category: str | None = Query(
+        default=None,
+        description=(
+            "可选品类过滤，仅支持: men's clothing / women's clothing / jewelery / electronics / all。"
+            " 传入 all 或留空表示不过滤。"
+        ),
+    ),
+) -> dict[str, Any]:
     """直接返回本地向量库 Top-K 检索结果（不走 LLM），用于前端展示检索多样性。"""
-    items = retrieve_top_k_with_scores(query=q, top_k=top_k)
-    return {"query": q, "top_k": top_k, "items": items}
+    cat = _normalize_category_param(category)
+    items = retrieve_top_k_with_scores(query=q, top_k=top_k, category=cat)
+    return {
+        "query": q,
+        "top_k": top_k,
+        "category": category or CATEGORY_ALL_TOKEN,
+        "items": items,
+    }
 
 
 @app.get("/api/user_profile/{user_id}")
@@ -1911,6 +2013,7 @@ def recommend(req: RecommendRequest) -> dict[str, Any]:
             "query": req.query,
             "page": req.page,
             "page_size": req.page_size,
+            "category": req.category,
         },
     )
     users_doc = read_json(USERS_PROFILE_JSON, default={"users": {}})
@@ -1920,10 +2023,12 @@ def recommend(req: RecommendRequest) -> dict[str, Any]:
     # 1. 优先从本地向量库做多模态召回；
     # 2. 若向量库或模型不可用，或召回结果为空，则回退到基于 products.json 的静态候选集。
     try:
+        # 解析并规范化前端传入的品类过滤参数
+        cat = _normalize_category_param(req.category) if req.category is not None else None
         # 为了支持分页，召回的数量与 page / page_size 挂钩，并设置一个上限
         # 这里将上限从 80 提升到 1000，以支持更多页的浏览体验
         top_k = min(req.page * req.page_size, 1000)
-        candidates = retrieve_top_k(query=req.query, top_k=top_k)
+        candidates = retrieve_top_k(query=req.query, top_k=top_k, category=cat)
         # 向量库可用但当前尚未完成入库时，retrieve_top_k 会返回空列表；
         # 此时也应视作需要降级，而不是直接给前端空推荐。
         if not candidates:
@@ -1935,6 +2040,14 @@ def recommend(req: RecommendRequest) -> dict[str, Any]:
         )
         # 降级模式下同样放宽兜底商品数量上限，保持与向量召回策略一致
         candidates = get_default_candidates(limit=1000)
+        # 若指定了类目过滤，则在兜底候选上做一次轻量过滤
+        if cat:
+            before = len(candidates)
+            candidates = [p for p in candidates if str(p.get("category") or "") == cat]
+            print(
+                "[backend] /api/recommend 兜底候选按品类过滤：",
+                {"cat": cat, "before": before, "after": len(candidates)},
+            )
 
     if not candidates:
         print("[backend] /api/recommend 没有召回到候选商品，直接返回空列表")
@@ -2000,6 +2113,17 @@ def recommend(req: RecommendRequest) -> dict[str, Any]:
     # 在分页之前，先按图片进行打散排序，减少同款图片在视觉上的密集堆叠
     recs = diversify_by_image(recs, products_map)
 
+    # 再做一层基于 product_id 的稳定去重，确保同一商品在最终推荐列表中只出现一次
+    deduped_recs: list[dict[str, Any]] = []
+    seen_pids: set[str] = set()
+    for rec in recs:
+        pid = str(rec.get("product_id") or "")
+        if not pid or pid in seen_pids:
+            continue
+        seen_pids.add(pid)
+        deduped_recs.append(rec)
+    recs = deduped_recs
+
     start = (req.page - 1) * req.page_size
     end = start + req.page_size
 
@@ -2051,6 +2175,7 @@ def smart_recommend(req: RecommendRequest) -> dict[str, Any]:
             "query": req.query,
             "page": req.page,
             "page_size": req.page_size,
+            "category": req.category,
         },
     )
 
@@ -2078,6 +2203,16 @@ def smart_recommend(req: RecommendRequest) -> dict[str, Any]:
             user_id=req.user_id,
             query=req.query,
         )
+
+    # 若前端显式指定了品类过滤，则覆盖 DeepSeek 解析出的 intent.category，
+    # 以便让“查询语义”与“用户选定的品类范围”同时生效。
+    try:
+        override_cat = _normalize_category_param(req.category) if req.category is not None else None
+    except HTTPException:
+        # 若前端传入非法值，_normalize_category_param 会在接口层返回 400，这里仅是兜底
+        override_cat = None
+    if override_cat:
+        intent.category = override_cat
 
     # 3) Hybrid Recall：基于 search_vector_text + 价格/品类过滤从 ChromaDB 召回 Top-K
     #    为了支持分页体验，将召回数量与 page/page_size 绑定，上限为 80 条。
@@ -2209,6 +2344,17 @@ def smart_recommend(req: RecommendRequest) -> dict[str, Any]:
 
     # 在分页前按图片打散，避免同图“刷屏”
     recs = diversify_by_image(recs, local_products_map)
+
+    # 再做一层基于 product_id 的稳定去重，保证最终推荐中同一商品仅出现一次
+    deduped_recs: list[dict[str, Any]] = []
+    seen_pids: set[str] = set()
+    for rec in recs:
+        pid = str(rec.get("product_id") or "")
+        if not pid or pid in seen_pids:
+            continue
+        seen_pids.add(pid)
+        deduped_recs.append(rec)
+    recs = deduped_recs
 
     start = (req.page - 1) * req.page_size
     end = start + req.page_size

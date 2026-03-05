@@ -1,0 +1,123 @@
+/* 顶层窗口背景与通用前景色 */
+QMainWindow {
+    background-color: #020617; /* slate-950 */
+    color: #e5e7eb;           /* slate-200 */
+    font-family: "Microsoft YaHei", "Segoe UI", system-ui, -apple-system;
+    font-size: 13px;
+}
+
+QWidget {
+    background-color: transparent;
+    color: #e5e7eb;
+}
+
+/* 左侧导航栏品牌 */
+QLabel#BrandLabel {
+    font-size: 16px;
+    font-weight: 600;
+    padding: 12px 8px 4px 8px;
+    color: #f9fafb;
+}
+
+QLabel#NavHint {
+    font-size: 11px;
+    color: #6b7280;
+    padding: 4px 8px 12px 8px;
+}
+
+/* 顶部标题 / 状态 */
+QLabel#TitleLabel {
+    font-size: 18px;
+    font-weight: 600;
+    padding: 10px 4px;
+}
+
+QLabel#SubStatusLabel {
+    font-size: 11px;
+    color: #9ca3af;
+    padding: 8px 4px;
+}
+
+QLabel#SummaryLabel {
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin: 6px 0 8px 0;
+    background-color: rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(55, 65, 81, 0.9);
+}
+
+QLabel#SectionTitle {
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 2px;
+}
+
+/* 左侧导航按钮 */
+QPushButton#NavButton {
+    text-align: left;
+    padding: 8px 12px;
+    margin: 4px 6px;
+    border-radius: 6px;
+    background-color: transparent;
+    border: 1px solid transparent;
+    color: #e5e7eb;
+}
+
+QPushButton#NavButton:hover {
+    background-color: rgba(30, 64, 175, 0.4);
+}
+
+QPushButton#NavButton:checked {
+    background-color: rgba(30, 64, 175, 0.9);
+    border-color: rgba(129, 140, 248, 0.8);
+}
+
+/* 通用主按钮（刷新） */
+QPushButton#PrimaryButton {
+    padding: 8px 12px;
+    margin: 10px 8px 14px 8px;
+    border-radius: 6px;
+    border: none;
+    background-color: #1d4ed8;
+    color: #f9fafb;
+    font-weight: 500;
+}
+
+QPushButton#PrimaryButton:hover {
+    background-color: #2563eb;
+}
+
+QPushButton#PrimaryButton:disabled {
+    background-color: #1e293b;
+    color: #6b7280;
+}
+
+/* 表格通用样式 */
+QTableWidget {
+    background-color: rgba(15, 23, 42, 0.95);
+    alternate-background-color: rgba(15, 23, 42, 0.8);
+    gridline-color: rgba(55, 65, 81, 1.0);
+    border: 1px solid rgba(55, 65, 81, 1.0);
+    border-radius: 6px;
+    selection-background-color: rgba(59, 130, 246, 0.4);
+    selection-color: #f9fafb;
+}
+
+QHeaderView::section {
+    background-color: rgba(15, 23, 42, 1.0);
+    color: #9ca3af;
+    padding: 4px 6px;
+    border: 0px;
+    border-bottom: 1px solid rgba(55, 65, 81, 1.0);
+}
+
+QTableCornerButton::section {
+    background-color: rgba(15, 23, 42, 1.0);
+    border: 0px;
+    border-bottom: 1px solid rgba(55, 65, 81, 1.0);
+}
+
+QScrollBar:vertical, QScrollBar:horizontal {
+    background: transparent;
+}
+

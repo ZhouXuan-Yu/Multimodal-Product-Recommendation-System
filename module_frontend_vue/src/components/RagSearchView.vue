@@ -12,6 +12,13 @@
           placeholder="输入关键词：例如 黑色 户外 鞋 防水 轻量..."
           @keyup.enter="doSearch"
         />
+        <select v-model="category" class="select">
+          <option value="all">全部类目</option>
+          <option value="men's clothing">男装（men's clothing）</option>
+          <option value="women's clothing">女装（women's clothing）</option>
+          <option value="jewelery">珠宝配饰（jewelery）</option>
+          <option value="electronics">数码电子（electronics）</option>
+        </select>
         <select v-model.number="topK" class="select">
           <option :value="10">Top-10</option>
           <option :value="20">Top-20</option>
@@ -28,26 +35,26 @@
     <div v-if="items.length" class="grid">
       <div v-for="item in items" :key="item.product_id" class="card" @click="$emit('item-click', item)">
         <div class="img-wrap">
-          <img :src="resolveImageUrl(item.image_url)" :alt="item.name" loading="lazy" />
+          <img :src="resolveImageUrl(item.image_url)" :alt="showName(item)" loading="lazy" />
         </div>
         <div class="meta">
           <div class="row">
-            <strong class="name" :title="item.name">{{ item.name }}</strong>
+            <strong class="name" :title="item.name">{{ showName(item) }}</strong>
             <span class="price">¥ {{ item.price }}</span>
           </div>
           <div class="row muted">
-            <span class="badge">{{ item.category }}</span>
+            <span class="badge" :title="item.category">{{ showCategory(item) }}</span>
             <span class="score" v-if="item.distance !== null && item.distance !== undefined">
-              distance: {{ Number(item.distance).toFixed(4) }}
+              距离：{{ Number(item.distance).toFixed(4) }}
             </span>
             <span
               class="score"
               v-if="item.similarity !== null && item.similarity !== undefined"
             >
-              sim: {{ (Number(item.similarity) * 100).toFixed(1) }}%
+              相似度：{{ (Number(item.similarity) * 100).toFixed(1) }}%
             </span>
           </div>
-          <p class="desc">{{ item.description }}</p>
+          <p class="desc" :title="item.description">{{ showDesc(item) }}</p>
           <div class="row tiny">
             <span class="pid">{{ item.product_id }}</span>
           </div>
@@ -65,11 +72,13 @@
 <script setup>
 import { ref } from 'vue'
 import { ragSearch } from '../api'
+import { formatCategoryZh, localizeProductDesc, localizeProductName } from '../utils/localeZh'
 
 defineEmits(['item-click'])
 
 const q = ref('适合户外运动的黑色鞋子')
 const topK = ref(20)
+const category = ref('all')
 const items = ref([])
 const loading = ref(false)
 const error = ref('')
@@ -80,13 +89,17 @@ const resolveImageUrl = (url) => {
   return url
 }
 
+const showName = (item) => localizeProductName(item?.name || '')
+const showDesc = (item) => localizeProductDesc(item?.description || '')
+const showCategory = (item) => formatCategoryZh(item?.category || '')
+
 const doSearch = async () => {
   error.value = ''
   const query = q.value.trim()
   if (!query) return
   loading.value = true
   try {
-    const res = await ragSearch({ q: query, top_k: topK.value })
+    const res = await ragSearch({ q: query, top_k: topK.value, category: category.value })
     items.value = res?.data?.items || []
   } catch (e) {
     items.value = []

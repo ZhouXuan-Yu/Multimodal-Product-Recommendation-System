@@ -108,9 +108,20 @@
         1,
         1,
         1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
         1
       ],
-      "activity_score": 14,
+      "activity_score": 25,
       "history": [
         {
           "product_id": "p_2_0",
@@ -239,6 +250,100 @@
             "from": "mall_or_chat"
           },
           "timestamp": "2026-03-05T07:24:01.506765"
+        },
+        {
+          "product_id": "p_19_70",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T08:57:05.814154"
+        },
+        {
+          "product_id": "p_19_70",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T08:57:08.378568"
+        },
+        {
+          "product_id": "p_19_70",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T08:57:08.867185"
+        },
+        {
+          "product_id": "p_9_42",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T08:57:09.107522"
+        },
+        {
+          "product_id": "p_9_42",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T08:57:09.310920"
+        },
+        {
+          "product_id": "p_9_42",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T08:57:09.516142"
+        },
+        {
+          "product_id": "p_19_91",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T08:57:10.345892"
+        },
+        {
+          "product_id": "p_19_91",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T08:57:10.836037"
+        },
+        {
+          "product_id": "p_19_23",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T08:57:14.922471"
+        },
+        {
+          "product_id": "p_19_23",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T08:57:16.502588"
+        },
+        {
+          "product_id": "p_19_91",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T09:02:53.698803"
         }
       ]
     }

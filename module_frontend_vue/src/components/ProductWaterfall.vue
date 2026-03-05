@@ -109,6 +109,11 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  // 外部控制的“换一批”计数器，每次自增会在当前 query 下切换到另一页推荐结果
+  refreshCounter: {
+    type: Number,
+    default: 0,
+  },
 })
 
 const emit = defineEmits(['item-click'])
@@ -241,6 +246,25 @@ watch(
     }
   },
   { immediate: true },
+)
+
+// 当外部触发“换一批”（refreshCounter 自增）时，在当前 query 下切换到下一页；
+// 若已是尾页（noMore = true），则回到第 1 页，实现多个 page 之间轮询
+watch(
+  () => props.refreshCounter,
+  (val, oldVal) => {
+    if (val === oldVal) return
+    // 如果当前还在加载，则略过这次刷新，避免并发请求
+    if (loadingMore.value) return
+
+    const nextPage = noMore.value ? 1 : page.value + 1
+    console.debug('[ProductWaterfall] 外部刷新触发，切换推荐页', {
+      fromPage: page.value,
+      toPage: nextPage,
+      refreshCounter: val,
+    })
+    loadRecommendations(nextPage)
+  },
 )
 
 onMounted(() => {

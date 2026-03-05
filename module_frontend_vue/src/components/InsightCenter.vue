@@ -557,6 +557,8 @@ const compare = reactive({
   a: { enabled: true, start: '', end: '' },
   b: { enabled: true, start: '', end: '' },
 })
+// 标记是否已经根据概览数据初始化过对比时间范围，避免每次刷新都重置用户选择
+const hasInitCompareRange = ref(false)
 
 const anomaly = reactive({
   sensitivity: 2.2,
@@ -569,7 +571,6 @@ const drill = reactive({
 })
 
 const loading = ref(false)
-const raw = ref({ overview: null, events: [] })
 
 // 基础虚拟概览数据：保证在没有真实数据时基础图表也有内容可看
 const buildMockTimeseries = () => {
@@ -611,6 +612,13 @@ const buildMockOverview = () => {
     timeseries: buildMockTimeseries(),
   }
 }
+
+// 行为事件概览原始数据（overview + events）
+// 默认先填充一份本地 mock 概览，用于组件初次挂载时立即展示基础图表
+const raw = ref({
+  overview: buildMockOverview(),
+  events: [],
+})
 
 // 将真实概览数据叠加在虚拟数据之上：真实值作为增量累加到 mock 上
 const mergeOverviewWithMock = (mockOverview, realOverview) => {
@@ -822,6 +830,13 @@ const semanticError = ref('')
 
 const anomalies = ref([])
 const sankeyReady = ref(false)
+
+// 缓存「向量偏移轨迹」与「行为路径桑基图」数据，避免在 Tab 之间切换时重复向后端请求
+// 结构示例：
+//   vectorDriftCache.value = { productId: 'xxx', payload: {...} }
+//   sankeyCache.value = { payload: {...} }
+const vectorDriftCache = ref(null)
+const sankeyCache = ref(null)
 
 const buildVectorDriftOption = (payload, focusProductId, focusProductName) => {
   if (!payload || !Array.isArray(payload.points) || !payload.points.length) {
@@ -1100,6 +1115,27 @@ const fetchData = async () => {
       // 明细事件仍然保留真实数据本身（用于钻取 / 异常检测等）
       events: eventsFromApi,
     }
+
+    // 仅在首次成功拿到概览后，根据时间序列初始化一次对比 Tab 的默认时间范围
+    if (!hasInitCompareRange.value) {
+      const ts = (mergedOverview.timeseries || []).map((x) => x.day).filter(Boolean)
+      const isYmd = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s)
+      if (ts.length && isYmd(ts[ts.length - 1])) {
+        const end = ts[ts.length - 1]
+        const endDate = new Date(end + 'T00:00:00')
+        const startDate = new Date(endDate)
+        startDate.setDate(startDate.getDate() - 6)
+        const prevEnd = new Date(startDate)
+        prevEnd.setDate(prevEnd.getDate() - 1)
+        const prevStart = new Date(prevEnd)
+        prevStart.setDate(prevStart.getDate() - 6)
+        compare.a.start = startDate.toISOString().slice(0, 10)
+        compare.a.end = endDate.toISOString().slice(0, 10)
+        compare.b.start = prevStart.toISOString().slice(0, 10)
+        compare.b.end = prevEnd.toISOString().slice(0, 10)
+      }
+      hasInitCompareRange.value = true
+    }
   } finally {
     loading.value = false
   }
@@ -1108,19 +1144,39 @@ const fetchData = async () => {
 const initOrUpdateVectorDriftChart = async () => {
   if (!drill.productId) return
   await nextTick()
-  if (vectorDriftRef.value && !vectorDriftChart) vectorDriftChart = echarts.init(vectorDriftRef.value)
+  if (!vectorDriftRef.value) return
+
+  if (vectorDriftChart && vectorDriftChart.getDom && vectorDriftChart.getDom() !== vectorDriftRef.value) {
+    vectorDriftChart.dispose()
+    vectorDriftChart = null
+  }
+  if (!vectorDriftChart) vectorDriftChart = echarts.init(vectorDriftRef.value)
 
   let data
-  try {
-    const resp = await fetchVectorDrift(props.userId, { max_events: 120 })
-    data = resp?.data
-  } catch (err) {
-    console.error('向量偏移轨迹接口异常，将回退到前端 mock：', err)
-  }
+  // 若缓存中已有当前商品的轨迹数据，则直接复用，避免重复请求后端
+  if (
+    vectorDriftCache.value &&
+    vectorDriftCache.value.productId === drill.productId &&
+    vectorDriftCache.value.payload
+  ) {
+    data = vectorDriftCache.value.payload
+  } else {
+    try {
+      const resp = await fetchVectorDrift(props.userId, { max_events: 120 })
+      data = resp?.data
+    } catch (err) {
+      console.error('向量偏移轨迹接口异常，将回退到前端 mock：', err)
+    }
 
-  // 若后端未返回可用点位，则基于当前用户事件在前端构造一条 mock 轨迹
-  if (!data || !Array.isArray(data.points) || !data.points.length) {
-    data = buildLocalVectorDriftMock(drill.productId, drill.productName)
+    // 若后端未返回可用点位，则基于当前用户事件在前端构造一条 mock 轨迹
+    if (!data || !Array.isArray(data.points) || !data.points.length) {
+      data = buildLocalVectorDriftMock(drill.productId, drill.productName)
+    }
+
+    vectorDriftCache.value = {
+      productId: drill.productId,
+      payload: data,
+    }
   }
 
   const option = buildVectorDriftOption(data, drill.productId, drill.productName)
@@ -1129,9 +1185,23 @@ const initOrUpdateVectorDriftChart = async () => {
 
 const initOrUpdateSankeyChart = async () => {
   await nextTick()
-  if (sankeyRef.value && !sankeyChart) sankeyChart = echarts.init(sankeyRef.value)
+  if (!sankeyRef.value) return
 
-  const { data } = await fetchBehaviorSankey(props.userId, { limit: 500 })
+  if (sankeyChart && sankeyChart.getDom && sankeyChart.getDom() !== sankeyRef.value) {
+    sankeyChart.dispose()
+    sankeyChart = null
+  }
+  if (!sankeyChart) sankeyChart = echarts.init(sankeyRef.value)
+
+  let data
+  if (sankeyCache.value && sankeyCache.value.payload) {
+    data = sankeyCache.value.payload
+  } else {
+    const resp = await fetchBehaviorSankey(props.userId, { limit: 500 })
+    data = resp?.data
+    sankeyCache.value = { payload: data }
+  }
+
   sankeyReady.value = Array.isArray(data.nodes) && data.nodes.length > 0
   const option = buildSankeyOption(data)
   sankeyChart?.setOption(option, true)
@@ -1224,8 +1294,20 @@ const renderSemanticDiff = async () => {
 
 const initOrUpdateBasicCharts = async () => {
   await nextTick()
-  if (donutRef.value && !donutChart) donutChart = echarts.init(donutRef.value)
-  if (trendRef.value && !trendChart) trendChart = echarts.init(trendRef.value)
+  if (!donutRef.value || !trendRef.value) return
+
+  // 如果 DOM 节点因为 tab 切换被销毁并重新挂载，需要重新绑定 ECharts 实例
+  if (donutChart && donutChart.getDom && donutChart.getDom() !== donutRef.value) {
+    donutChart.dispose()
+    donutChart = null
+  }
+  if (trendChart && trendChart.getDom && trendChart.getDom() !== trendRef.value) {
+    trendChart.dispose()
+    trendChart = null
+  }
+
+  if (!donutChart) donutChart = echarts.init(donutRef.value)
+  if (!trendChart) trendChart = echarts.init(trendRef.value)
 
   const catItems = overview.value?.distribution?.by_category || []
   donutChart?.setOption(buildDonutOption(catItems, '类目分布'), true)
@@ -1239,9 +1321,19 @@ const initOrUpdateBasicCharts = async () => {
 const initOrUpdateDrillCharts = async () => {
   await nextTick()
   if (!drill.category) return
+  if (!drillDonutRef.value || !drillTrendRef.value) return
 
-  if (drillDonutRef.value && !drillDonutChart) drillDonutChart = echarts.init(drillDonutRef.value)
-  if (drillTrendRef.value && !drillTrendChart) drillTrendChart = echarts.init(drillTrendRef.value)
+  if (drillDonutChart && drillDonutChart.getDom && drillDonutChart.getDom() !== drillDonutRef.value) {
+    drillDonutChart.dispose()
+    drillDonutChart = null
+  }
+  if (drillTrendChart && drillTrendChart.getDom && drillTrendChart.getDom() !== drillTrendRef.value) {
+    drillTrendChart.dispose()
+    drillTrendChart = null
+  }
+
+  if (!drillDonutChart) drillDonutChart = echarts.init(drillDonutRef.value)
+  if (!drillTrendChart) drillTrendChart = echarts.init(drillTrendRef.value)
 
   const byAction = {}
   for (const e of drillEvents.value) {
@@ -1265,7 +1357,13 @@ const handleClickProduct = async (p) => {
 
 const renderCompare = async () => {
   await nextTick()
-  if (compareRef.value && !compareChart) compareChart = echarts.init(compareRef.value)
+  if (!compareRef.value) return
+
+  if (compareChart && compareChart.getDom && compareChart.getDom() !== compareRef.value) {
+    compareChart.dispose()
+    compareChart = null
+  }
+  if (!compareChart) compareChart = echarts.init(compareRef.value)
 
   const seriesA = compare.a.enabled ? filterEventsByRange(events.value, compare.a.start, compare.a.end) : []
   const seriesB = compare.b.enabled ? filterEventsByRange(events.value, compare.b.start, compare.b.end) : []
@@ -1335,7 +1433,13 @@ const renderCompare = async () => {
 
 const renderAnomaly = async () => {
   await nextTick()
-  if (anomalyRef.value && !anomalyChart) anomalyChart = echarts.init(anomalyRef.value)
+  if (!anomalyRef.value) return
+
+  if (anomalyChart && anomalyChart.getDom && anomalyChart.getDom() !== anomalyRef.value) {
+    anomalyChart.dispose()
+    anomalyChart = null
+  }
+  if (!anomalyChart) anomalyChart = echarts.init(anomalyRef.value)
   const series = overview.value?.timeseries || dailySeriesFromEvents(events.value)
 
   const values = series.map((x) => x.value || 0)
@@ -1613,26 +1717,20 @@ watch(
 )
 
 onMounted(async () => {
-  await fetchData()
+  // 1）组件挂载时先用本地 mock 概览渲染一次基础图表，保证「一打开就有数据」
   await initOrUpdateBasicCharts()
 
-  // 初始化对比范围：默认用最后 7 天 vs 前一周
-  const ts = (overview.value?.timeseries || []).map((x) => x.day).filter(Boolean)
-  const isYmd = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s)
-  if (ts.length && isYmd(ts[ts.length - 1])) {
-    const end = ts[ts.length - 1]
-    const endDate = new Date(end + 'T00:00:00')
-    const startDate = new Date(endDate)
-    startDate.setDate(startDate.getDate() - 6)
-    const prevEnd = new Date(startDate)
-    prevEnd.setDate(prevEnd.getDate() - 1)
-    const prevStart = new Date(prevEnd)
-    prevStart.setDate(prevStart.getDate() - 6)
-    compare.a.start = startDate.toISOString().slice(0, 10)
-    compare.a.end = endDate.toISOString().slice(0, 10)
-    compare.b.start = prevStart.toISOString().slice(0, 10)
-    compare.b.end = prevEnd.toISOString().slice(0, 10)
-  }
+  // 2）随后异步拉取真实数据，合并后刷新当前可见 Tab 的图表
+  fetchData()
+    .then(async () => {
+      if (activeTab.value === 'basic') await initOrUpdateBasicCharts()
+      if (activeTab.value === 'drill' && drill.category) await initOrUpdateDrillCharts()
+      if (activeTab.value === 'compare') await renderCompare()
+      if (activeTab.value === 'anomaly') await renderAnomaly()
+    })
+    .catch((err) => {
+      console.error('行为洞察数据加载失败：', err)
+    })
 
   window.addEventListener('resize', resizeAll)
 })

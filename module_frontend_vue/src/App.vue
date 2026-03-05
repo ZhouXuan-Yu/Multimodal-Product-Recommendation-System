@@ -119,16 +119,27 @@
             <div class="mall-main-card">
               <section class="mall-products-section">
                 <div class="mall-products-header">
-                  <h3 class="mall-products-title">为你推荐 · 个性化好物</h3>
-                  <p class="mall-products-sub">
-                    推荐结果完全由右侧 DeepSeek 智能导购驱动，顶部不再提供传统搜索框。
-                  </p>
+                  <div class="mall-products-header-main">
+                    <h3 class="mall-products-title">为你推荐 · 个性化好物</h3>
+                    <p class="mall-products-sub">
+                      推荐结果完全由右侧 DeepSeek 智能导购驱动，顶部不再提供传统搜索框。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    class="mall-refresh-btn"
+                    :disabled="mallRefreshing"
+                    @click="refreshMallRecommendations"
+                  >
+                    {{ mallRefreshing ? '刷新中...' : '换一批推荐' }}
+                  </button>
                 </div>
-                <ProductWaterfall
-                  :user-id="userId"
-                  :query="mallQuery"
-                  @item-click="handleItemClick"
-                />
+        <ProductWaterfall
+          :user-id="userId"
+          :query="mallQuery"
+          :refresh-counter="mallRefreshCounter"
+          @item-click="handleItemClick"
+        />
               </section>
             </div>
           </div>
@@ -605,6 +616,20 @@ const handleLogout = () => {
 
 // 商城区搜索 / AI 导购联动使用的 query
 const mallQuery = ref('')
+// 商城推荐“换一批”计数器 & 状态：用于在当前 query 下切换不同页推荐
+const mallRefreshCounter = ref(0)
+const mallRefreshing = ref(false)
+
+const refreshMallRecommendations = () => {
+  if (mallRefreshing.value) return
+  mallRefreshing.value = true
+  // 自增计数器，触发 ProductWaterfall 在当前 query 下走到下一页推荐
+  mallRefreshCounter.value += 1
+  // 轻量 loading 态，仅用于文案和点击防抖
+  window.setTimeout(() => {
+    mallRefreshing.value = false
+  }, 400)
+}
 
 // 购物车状态
 const showCartModal = ref(false)
@@ -1014,7 +1039,9 @@ watch(
   padding: 16px 18px 18px;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* 面板内部允许纵向滚动，避免内容被裁切；横向仍然隐藏滚动条 */
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .panel-header {
@@ -1197,6 +1224,12 @@ watch(
   gap: 8px;
 }
 
+.mall-products-header-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .mall-products-title {
   font-size: 15px;
   font-weight: 600;
@@ -1205,6 +1238,47 @@ watch(
 .mall-products-sub {
   font-size: 11px;
   color: #9ca3af;
+}
+
+.mall-refresh-btn {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(248, 171, 98, 0.8);
+  background: linear-gradient(120deg, #fff7ed, #fffbeb);
+  font-size: 12px;
+  color: #c2410c;
+  cursor: pointer;
+  box-shadow:
+    0 6px 14px rgba(248, 171, 98, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.9);
+  transition:
+    transform 0.14s ease,
+    box-shadow 0.14s ease,
+    opacity 0.12s ease,
+    border-color 0.14s ease;
+}
+
+.mall-refresh-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 10px 22px rgba(248, 171, 98, 0.6),
+    0 0 0 1px rgba(253, 230, 138, 0.9);
+}
+
+.mall-refresh-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow:
+    0 4px 10px rgba(248, 171, 98, 0.5),
+    0 0 0 1px rgba(253, 230, 138, 0.9);
+}
+
+.mall-refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  box-shadow:
+    0 3px 8px rgba(148, 163, 184, 0.2),
+    0 0 0 1px rgba(229, 231, 235, 0.9);
 }
 
 .panel-analytics {

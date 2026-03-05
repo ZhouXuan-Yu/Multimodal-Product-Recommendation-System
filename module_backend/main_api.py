@@ -2116,7 +2116,9 @@ def recommend(req: RecommendRequest) -> dict[str, Any]:
     prompt = json.dumps(prompt_payload, ensure_ascii=False, indent=2)
 
     try:
-        llm_result = agent.recommend(prompt)
+        # 为避免前端 axios 60s 超时，这里将 DeepSeek 调用的超时时间限制在 30s，
+        # 超时或解析失败时会走下方 fallback_rank 降级路径，保证接口整体延迟可控。
+        llm_result = agent.recommend(prompt, timeout=30)
     except Exception as exc:  # noqa: BLE001
         print(
             "[backend] /api/recommend LLM 调用异常，将使用 fallback_rank：",
@@ -2126,7 +2128,28 @@ def recommend(req: RecommendRequest) -> dict[str, Any]:
 
     # 为前端补齐商品详情和可访问图片 URL，并根据 page / page_size 做分页切片
     recs = llm_result.get("recommendations", [])
-    # 如果 LLM 没有返回结构化 recommendations，则降级为按 candidates 顺序返回
+
+    # 1）兜底：如果 LLM 没有返回结构化 recommendations，则直接按 candidates 顺序生成
+    if not isinstance(recs, list) or not recs:
+        recs = [
+            {
+                "product_id": p["product_id"],
+                "rank": i + 1,
+                "reason": "基于你的搜索词和偏好的相似度排序结果。",
+            }
+            for i, p in enumerate(candidates)
+            if p.get("product_id")
+        ]
+
+    # 2）过滤掉所有不在候选集合中的 product_id，避免出现 llm_rec_len > 0 但 items_len = 0 的情况
+    recs = [
+        r
+        for r in recs
+        if isinstance(r, dict)
+        and str(r.get("product_id") or "") in products_map
+    ]
+
+    # 若过滤后为空，再次退回到基于 candidates 的简单排序结果
     if not recs:
         recs = [
             {
@@ -2135,12 +2158,13 @@ def recommend(req: RecommendRequest) -> dict[str, Any]:
                 "reason": "基于你的搜索词和偏好的相似度排序结果。",
             }
             for i, p in enumerate(candidates)
+            if p.get("product_id")
         ]
 
-    # 在分页之前，先按图片进行打散排序，减少同款图片在视觉上的密集堆叠
+    # 3）在分页之前，先按图片进行打散排序，减少同款图片在瀑布流中的密集堆叠
     recs = diversify_by_image(recs, products_map)
 
-    # 再做一层基于 product_id 的稳定去重，确保同一商品在最终推荐列表中只出现一次
+    # 4）再做一层基于 product_id 的稳定去重，确保同一商品在最终推荐列表中只出现一次
     deduped_recs: list[dict[str, Any]] = []
     seen_pids: set[str] = set()
     for rec in recs:

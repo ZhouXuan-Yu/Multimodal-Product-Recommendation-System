@@ -62,9 +62,10 @@
       />
 
       <!-- 已登录时的主业务区域（未登录时不渲染任何内部功能页） -->
-      <!-- 视图 A：智能推荐商城 -->
+      <!-- 视图 A：智能推荐商城（保持组件挂载，只在翻页等交互时重新请求数据） -->
       <section
-        v-if="authUser && activeView === 'mall'"
+        v-if="authUser"
+        v-show="activeView === 'mall'"
         class="panel panel-mall glass-elevated"
       >
         <header class="panel-header">
@@ -83,7 +84,8 @@
 
       <!-- 视图 B：本地向量检索（RAG 召回） -->
       <section
-        v-else-if="authUser && activeView === 'rag'"
+        v-if="authUser"
+        v-show="activeView === 'rag'"
         class="panel panel-rag glass-elevated"
       >
         <header class="panel-header">
@@ -98,7 +100,8 @@
 
       <!-- 视图 C：个人数据洞察中心 -->
       <section
-        v-else-if="authUser && activeView === 'analytics'"
+        v-if="authUser"
+        v-show="activeView === 'analytics'"
         class="panel panel-analytics glass-elevated"
       >
         <header class="panel-header">
@@ -112,7 +115,8 @@
       </section>
       <!-- 视图 D：我的订单 -->
       <section
-        v-else-if="authUser && activeView === 'orders'"
+        v-if="authUser"
+        v-show="activeView === 'orders'"
         class="panel panel-orders glass-elevated"
       >
         <OrderCenter :user-id="userId" />
@@ -120,7 +124,8 @@
 
       <!-- 视图 E：购物车结算页 -->
       <section
-        v-else-if="authUser && activeView === 'cart'"
+        v-if="authUser"
+        v-show="activeView === 'cart'"
         class="panel panel-cart glass-elevated"
       >
         <CartCheckout
@@ -134,7 +139,8 @@
 
       <!-- 视图 F：个人信息 -->
       <section
-        v-else-if="authUser && activeView === 'profile'"
+        v-if="authUser"
+        v-show="activeView === 'profile'"
         class="panel panel-profile glass-elevated"
       >
         <header class="panel-header">

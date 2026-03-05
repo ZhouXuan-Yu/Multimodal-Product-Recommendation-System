@@ -40,6 +40,12 @@
             <span class="score" v-if="item.distance !== null && item.distance !== undefined">
               distance: {{ Number(item.distance).toFixed(4) }}
             </span>
+            <span
+              class="score"
+              v-if="item.similarity !== null && item.similarity !== undefined"
+            >
+              sim: {{ (Number(item.similarity) * 100).toFixed(1) }}%
+            </span>
           </div>
           <p class="desc">{{ item.description }}</p>
           <div class="row tiny">

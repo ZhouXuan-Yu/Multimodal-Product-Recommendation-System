@@ -105,9 +105,12 @@
         1,
         1,
         1,
+        1,
+        1,
+        1,
         1
       ],
-      "activity_score": 11,
+      "activity_score": 14,
       "history": [
         {
           "product_id": "p_2_0",
@@ -206,6 +209,36 @@
             "from": "mall_or_chat"
           },
           "timestamp": "2026-03-05T03:51:21.991960"
+        },
+        {
+          "product_id": "p_1_24",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T03:57:31.016630"
+        },
+        {
+          "product_id": "p_8_30",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T07:05:20.794433"
+        },
+        {
+          "product_id": "p_2_28",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T07:24:01.506765"
         }
       ]
     }

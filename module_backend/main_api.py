@@ -22,6 +22,7 @@ from module_rag_ai.multimodal_embedding import ChineseCLIPEmbedder
 from module_rag_ai.vector_db_manager import VectorDBManager, load_products
 from module_rag_ai.model_worker import get_global_clip_worker
 from module_rag_ai.order_agent import Order, OrderAgent, OrderItem, OrderStatus
+from core.recommendation_engine import SmartRecommendationEngine
 from core.user_insight_engine import UserInsightEngine, UserBehaviorEvent
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -285,6 +286,65 @@ def atomic_write_json(path: Path, payload: Any) -> None:
     tmp.replace(path)
 
 
+def _basic_diversify_products(
+    products: list[dict[str, Any]],
+    *,
+    top_k: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    基础版多样性打散：
+    - 优先去重相同图片（image_path / image_url）；
+    - 其次控制单一品类占比不过高（最多约 1/3）；
+    - 保持原有顺序的“相似度优先”特性，只在选择阶段做过滤。
+    """
+    if not products:
+        return products
+
+    limit = top_k or len(products)
+    # 按「当前目标条数的 1/3」控制每个品类的最大数量，至少为 1
+    max_per_category = max(1, limit // 3)
+
+    used_image_keys: set[str] = set()
+    category_counter: dict[str, int] = {}
+    diversified: list[dict[str, Any]] = []
+
+    for p in products:
+        if len(diversified) >= limit:
+            break
+
+        pid = str(p.get("product_id") or "")
+        img_raw = p.get("image_path") or p.get("image_url") or ""
+        img_key = Path(img_raw).name if img_raw else pid
+
+        # 1) 去重相同图片（同一图片只保留一条）
+        if img_key in used_image_keys:
+            continue
+
+        # 2) 控制单一品类的上限
+        category = str(p.get("category") or "unknown")
+        current_cnt = category_counter.get(category, 0)
+        if current_cnt >= max_per_category:
+            continue
+
+        diversified.append(p)
+        used_image_keys.add(img_key)
+        category_counter[category] = current_cnt + 1
+
+    # 若因为去重导致数量不足，则补齐到 limit（不再做去重限制，保证有结果可看）
+    if len(diversified) < limit:
+        seen_ids = {str(x.get("product_id") or "") for x in diversified}
+        for p in products:
+            if len(diversified) >= limit:
+                break
+            pid = str(p.get("product_id") or "")
+            if not pid or pid in seen_ids:
+                continue
+            diversified.append(p)
+            seen_ids.add(pid)
+
+    return diversified
+
+
 def retrieve_top_k(query: str, top_k: int = 10) -> list[dict[str, Any]]:
     """检索层：向量召回 + products.json 反查详情。
 
@@ -322,16 +382,21 @@ def retrieve_top_k(query: str, top_k: int = 10) -> list[dict[str, Any]]:
     result = db.collection.query(
         query_embeddings=[query_vec.tolist()],
         n_results=top_k,
-        include=["ids"],
+        # Chroma v0.5+ 不再支持在 include 中显式传入 "ids"，
+        # ids 默认总是返回，显式传入会触发 "Expected include item ... got ids" 错误。
+        # 因此前端只依赖 ids 时，这里直接不传 include。
     )
     ids = result.get("ids", [[]])[0]
 
-    output: list[dict[str, Any]] = []
+    raw: list[dict[str, Any]] = []
     for pid in ids:
         p = product_map.get(pid)
         if p:
-            output.append(p)
-    return output
+            raw.append(p)
+
+    # 在向量相似度排序的基础上做一次“轻量多样性打散”，避免同图/同类商品刷屏
+    diversified = _basic_diversify_products(raw, top_k=top_k)
+    return diversified
 
 
 def retrieve_top_k_with_scores(query: str, top_k: int = 10) -> list[dict[str, Any]]:
@@ -360,7 +425,9 @@ def retrieve_top_k_with_scores(query: str, top_k: int = 10) -> list[dict[str, An
         result = db.collection.query(
             query_embeddings=[query_vec.tolist()],
             n_results=top_k,
-            include=["distances", "metadatas", "documents", "ids"],
+            # 注意：Chroma v0.5+ 的 include 不支持 "ids"，
+            # ids 始终作为基础字段返回，因此无需显式声明。
+            include=["distances", "metadatas", "documents"],
         )
     except Exception as exc:  # noqa: BLE001
         # 任何编码/检索阶段的异常，都打印日志并返回空列表，前端不会收到 500
@@ -370,7 +437,7 @@ def retrieve_top_k_with_scores(query: str, top_k: int = 10) -> list[dict[str, An
     ids = result.get("ids", [[]])[0]
     distances = result.get("distances", [[]])[0]
 
-    output: list[dict[str, Any]] = []
+    raw: list[dict[str, Any]] = []
     for idx, pid in enumerate(ids):
         p = product_map.get(pid)
         if not p:
@@ -381,7 +448,7 @@ def retrieve_top_k_with_scores(query: str, top_k: int = 10) -> list[dict[str, An
         except Exception:
             dist = None
         similarity = (1.0 - dist) if dist is not None else None
-        output.append(
+        raw.append(
             {
                 **p,
                 "distance": dist,
@@ -389,7 +456,10 @@ def retrieve_top_k_with_scores(query: str, top_k: int = 10) -> list[dict[str, An
                 "image_url": f"/static/images/{Path(p.get('image_path', '')).name}",
             }
         )
-    return output
+
+    # 对 RAG 结果也使用基础多样性策略：优先保留不同图片 & 品类的 Top-K
+    diversified = _basic_diversify_products(raw, top_k=top_k)
+    return diversified
 
 
 def get_default_candidates(limit: int = 1000) -> list[dict[str, Any]]:
@@ -1962,6 +2032,226 @@ def recommend(req: RecommendRequest) -> dict[str, Any]:
         },
     )
     return {"query": req.query, "items": final_items, "llm": llm_result}
+
+
+@app.post("/api/v1/recommend/smart")
+def smart_recommend(req: RecommendRequest) -> dict[str, Any]:
+    """
+    Phase2：基于“意图解析 -> Hybrid Recall -> 业务过滤 -> LLM 精排”的智能推荐接口。
+
+    与 /api/recommend 的区别：
+    - 在检索前先调用 DeepSeek 解析 QueryIntent（search_vector_text / price_range / category 等）；
+    - 召回阶段使用 SmartRecommendationEngine.hybrid_recall，对接 ChromaDB + Metadata 过滤；
+    - 结果仍然注入用户画像/行为聚合信息，交由 DeepSeek 做语义 Rerank，并返回心动理由。
+    """
+    print(
+        "[backend] /api/v1/recommend/smart 收到请求：",
+        {
+            "user_id": req.user_id,
+            "query": req.query,
+            "page": req.page,
+            "page_size": req.page_size,
+        },
+    )
+
+    # 1) 加载用户画像与历史行为（供意图解析与 Rerank 使用）
+    users_doc = read_json(USERS_PROFILE_JSON, default={"users": {}})
+    user_profile = users_doc.get("users", {}).get(req.user_id, {})
+    history: list[dict[str, Any]] = user_profile.get("history", []) if isinstance(user_profile, dict) else []
+
+    # 2) 意图解析：将自然语言 Query 转为结构化 QueryIntent
+    smart_engine = SmartRecommendationEngine()
+    try:
+        intent = smart_engine.analyze_intent(
+            user_id=req.user_id,
+            query=req.query,
+            user_profile=user_profile if isinstance(user_profile, dict) else {},
+            history=history,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(
+            "[backend] /api/v1/recommend/smart 意图解析异常，将降级为直接使用原始 query：",
+            {"error": repr(exc)},
+        )
+        # analyze_intent 内部已有降级策略，这里仅作为兜底
+        intent = smart_engine.analyze_intent(
+            user_id=req.user_id,
+            query=req.query,
+        )
+
+    # 3) Hybrid Recall：基于 search_vector_text + 价格/品类过滤从 ChromaDB 召回 Top-K
+    #    为了支持分页体验，将召回数量与 page/page_size 绑定，上限为 80 条。
+    top_k = min(max(req.page * req.page_size, 20), 80)
+    try:
+        recall_raw = smart_engine.hybrid_recall(
+            intent=intent,
+            top_k=top_k,
+            include=["metadatas", "distances", "documents"],
+        )
+        ids = (recall_raw.get("ids") or [[]])[0] or []
+    except Exception as exc:  # noqa: BLE001
+        print(
+            "[backend] /api/v1/recommend/smart Hybrid Recall 失败，将直接回退到静态候选：",
+            {"error": repr(exc)},
+        )
+        ids = []
+        recall_raw = {"metadatas": [[]], "distances": [[]]}
+
+    products_map = load_products_map()
+    metadatas = (recall_raw.get("metadatas") or [[]])[0] or []
+    distances = (recall_raw.get("distances") or [[]])[0] or []
+
+    candidates: list[dict[str, Any]] = []
+    for idx, pid in enumerate(ids):
+        pid_str = str(pid)
+        base = products_map.get(pid_str, {}) or {}
+        meta = metadatas[idx] if idx < len(metadatas) else {}
+
+        # 优先使用产品主数据，缺失字段由 metadata 补齐
+        merged = {**meta, **base}
+        if "product_id" not in merged:
+            merged["product_id"] = pid_str
+
+        dist = None
+        try:
+            dist = float(distances[idx]) if idx < len(distances) else None
+        except Exception:  # noqa: BLE001
+            dist = None
+
+        merged["distance"] = dist
+        merged["similarity"] = (1.0 - dist) if dist is not None else None
+        candidates.append(merged)
+
+    # 若召回为空，则回退到静态候选集，保证前端始终有内容可看
+    if not candidates:
+        print(
+            "[backend] /api/v1/recommend/smart 未从 Hybrid Recall 中召回商品，将使用静态候选作为兜底。",
+        )
+        candidates = get_default_candidates(limit=top_k)
+        products_map = {p["product_id"]: p for p in candidates if p.get("product_id")}
+
+    if not candidates:
+        return {
+            "query": req.query,
+            "items": [],
+            "llm": {"recommendations": []},
+            "intent": intent.__dict__,
+        }
+
+    # 4) 画像上下文：从 Chroma user_personas + 行为数据聚合中构造
+    insight_engine = UserInsightEngine()
+    # 这里聚合的 products_map 只包含当前候选，避免无关商品噪声
+    local_products_map = {p["product_id"]: p for p in candidates if p.get("product_id")}
+    agg = _aggregate_behavior_for_insight(history, local_products_map, days=7)
+    rerank_ctx = insight_engine.build_rerank_context(
+        user_id=req.user_id,
+        recent_tags=[x["name"] for x in agg.get("by_tag", [])],
+        recent_categories=[x["name"] for x in agg.get("by_category", [])],
+    )
+
+    # 5) DeepSeek Rerank：结合 QueryIntent + 用户画像 + 候选商品做 Top-N 精排
+    agent = DeepSeekAgent()
+    prompt_payload = {
+        "user_id": req.user_id,
+        "raw_query": req.query,
+        "parsed_intent": {
+            "normalized_query": intent.normalized_query,
+            "search_vector_text": intent.search_vector_text,
+            "category": intent.category,
+            "price_min": intent.price_min,
+            "price_max": intent.price_max,
+            "style_tags": intent.style_tags,
+            "must_have_keywords": intent.must_have_keywords,
+            "exclude_keywords": intent.exclude_keywords,
+            "sort_by": intent.sort_by,
+        },
+        "user_profile": user_profile,
+        "persona_context": rerank_ctx,
+        "recent_behavior_agg": agg,
+        "candidates": candidates,
+        "rules": {
+            "role": "你是一名专业的电商导购助手，需要在理解用户真实意图的前提下进行推荐。",
+            "target": "从候选集中挑选并排序 Top-N 商品（N 至少为 10，允许多于当前页用于后续分页）。",
+            "must_format": (
+                "必须返回 JSON，对象中包含 recommendations(list) 字段。"
+                "recommendations 中每一项必须包含 product_id, rank, reason。"
+            ),
+            "constraints": [
+                "优先匹配 parsed_intent 中的品类、价格区间和 must_have_keywords。",
+                "合理利用 persona_context 和 recent_behavior_agg，贴合用户长期与近期偏好。",
+                "对于 parsed_intent.exclude_keywords 或近期多次被 dislike 的风格，应明显降低排序。",
+                "在 reason 中用简短中文解释“为什么推荐”，语言自然，像真人导购。",
+            ],
+        },
+    }
+    prompt = json.dumps(prompt_payload, ensure_ascii=False, indent=2)
+
+    try:
+        llm_result = agent.recommend(prompt)
+    except Exception as exc:  # noqa: BLE001
+        print(
+            "[backend] /api/v1/recommend/smart LLM 调用异常，将使用 fallback_rank：",
+            {"error": repr(exc)},
+        )
+        llm_result = fallback_rank(candidates)
+
+    recs = llm_result.get("recommendations", [])
+    if not recs:
+        recs = [
+            {
+                "product_id": p["product_id"],
+                "rank": i + 1,
+                "reason": "基于你当前检索意图和历史偏好的本地向量相似度排序结果。",
+            }
+            for i, p in enumerate(candidates)
+            if p.get("product_id")
+        ]
+
+    # 在分页前按图片打散，避免同图“刷屏”
+    recs = diversify_by_image(recs, local_products_map)
+
+    start = (req.page - 1) * req.page_size
+    end = start + req.page_size
+
+    final_items: list[dict[str, Any]] = []
+    for rec in recs[start:end]:
+        pid = rec.get("product_id")
+        p = local_products_map.get(pid) or products_map.get(pid) or {}
+        if not p:
+            continue
+        final_items.append(
+            {
+                "product_id": pid,
+                "name": p.get("name"),
+                "price": p.get("price"),
+                "category": p.get("category"),
+                "description": p.get("description"),
+                "image_url": f"/static/images/{Path(p.get('image_path', '')).name}"
+                if p.get("image_path")
+                else None,
+                "reason": rec.get("reason", ""),
+                "rank": rec.get("rank", 0),
+            }
+        )
+
+    print(
+        "[backend] /api/v1/recommend/smart 返回结果概览：",
+        {
+            "page": req.page,
+            "page_size": req.page_size,
+            "items_len": len(final_items),
+            "llm_rec_len": len(recs),
+            "intent_category": intent.category,
+            "intent_price_min": intent.price_min,
+            "intent_price_max": intent.price_max,
+        },
+    )
+    return {
+        "query": req.query,
+        "items": final_items,
+        "llm": llm_result,
+        "intent": intent.__dict__,
+    }
 
 
 class ChatRequest(BaseModel):

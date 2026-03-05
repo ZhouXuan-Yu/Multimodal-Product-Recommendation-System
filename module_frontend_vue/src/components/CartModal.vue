@@ -108,12 +108,14 @@ const formatPrice = (value) => {
 .cart-modal {
   width: 520px;
   max-width: 92vw;
+  max-height: 90vh;
   border-radius: 16px;
   padding: 16px 18px 14px;
   background: rgba(255, 255, 255, 0.98);
   box-shadow:
     0 24px 60px rgba(15, 23, 42, 0.35),
     0 0 0 1px rgba(226, 232, 240, 0.9);
+  overflow-y: auto;
 }
 
 .modal-header {
@@ -186,8 +188,8 @@ const formatPrice = (value) => {
 .desc {
   font-size: 12px;
   color: #6b7280;
-  max-height: 40px;
-  overflow: hidden;
+  max-height: 96px;
+  overflow-y: auto;
 }
 
 .quantity-row {

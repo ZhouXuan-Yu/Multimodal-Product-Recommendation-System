@@ -5,7 +5,7 @@
 
 import os
 import pickle
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from collections import defaultdict
@@ -121,6 +121,20 @@ class SmartRecommendationEngine:
         normalized_query = str(resp.get("normalized_query") or query)
         search_vector_text = str(resp.get("search_vector_text") or normalized_query)
         category = str(resp.get("category") or "") if resp.get("category") is not None else ""
+
+        # 仅允许 4 个标准类目参与结构化过滤，其它一律当作语义信息处理
+        allowed_categories = {
+            "men's clothing",
+            "women's clothing",
+            "jewelery",
+            "electronics",
+        }
+        if category and category not in allowed_categories:
+            logger.info(
+                "analyze_intent: 非标准类目 %s 将不会用于 where 过滤，仅参与语义检索",
+                category,
+            )
+            category = ""
 
         price_range = resp.get("price_range") or {}
         price_min = price_range.get("min")
@@ -242,6 +256,139 @@ class SmartRecommendationEngine:
         except Exception as e:  # noqa: BLE001
             logger.error("Hybrid Recall 召回失败，将返回空结果。err=%s", e)
             return {"ids": [[]], "distances": [[]], "metadatas": [[]], "documents": [[]]}
+
+    # --------------------------
+    # Phase3：Rerank & 推荐结果包装
+    # --------------------------
+
+    @staticmethod
+    def _distance_to_similarity(distance: float) -> float:
+        """
+        将向量库返回的 distance 粗略映射为 [0,1] 区间的“相似度”，便于与其它业务特征融合。
+
+        这里采用 1 / (1 + d) 的简单单调变换：
+        - 距离越小，相似度越接近 1
+        - 距离越大，相似度越接近 0
+        """
+        try:
+            d = float(distance)
+            if d < 0:
+                d = 0.0
+            return 1.0 / (1.0 + d)
+        except Exception:  # noqa: BLE001
+            return 0.0
+
+    def rerank_with_cosine_and_business_rules(
+        self,
+        recall_result: Dict[str, Any],
+        top_k: int = 20,
+    ) -> List[Dict[str, Any]]:
+        """
+        基于向量相似度 + 简单业务规则，对 Hybrid Recall 的结果做重排序。
+
+        当前版本为了尽快跑通链路，仅使用“distance -> similarity”的分数；
+        预留了 metadata 字段，可后续加入价格、销量、评分等业务打分。
+        """
+        ids_nested = recall_result.get("ids") or [[]]
+        metas_nested = recall_result.get("metadatas") or [[]]
+        dists_nested = recall_result.get("distances") or [[]]
+
+        if not ids_nested or not ids_nested[0]:
+            return []
+
+        ids = ids_nested[0]
+        metadatas = metas_nested[0] if metas_nested and metas_nested[0] is not None else []
+        distances = dists_nested[0] if dists_nested and dists_nested[0] is not None else []
+
+        # 对齐长度，避免向量库返回字段不一致导致的下标错误
+        n = min(len(ids), len(metadatas), len(distances))
+        items: List[Dict[str, Any]] = []
+
+        for i in range(n):
+            pid = ids[i]
+            meta = metadatas[i] if i < len(metadatas) else {}
+            dist = distances[i] if i < len(distances) else 0.0
+
+            base_sim = self._distance_to_similarity(dist)
+
+            # 当前仅使用语义相似度作为最终打分；后续可在此叠加价格、流行度等业务特征
+            final_score = base_sim
+
+            items.append(
+                {
+                    "product_id": pid,
+                    "score": float(final_score),
+                    "similarity": float(base_sim),
+                    "distance": float(dist),
+                    "metadata": meta or {},
+                }
+            )
+
+        # 按最终得分从高到低排序
+        items.sort(key=lambda x: x["score"], reverse=True)
+        return items[:top_k]
+
+    def recommend(
+        self,
+        user_id: str,
+        query: str,
+        top_k: int = 20,
+        user_profile: Optional[Dict[str, Any]] = None,
+        history: Optional[List[Dict[str, Any]]] = None,
+        timeout: int = 30,
+    ) -> Dict[str, Any]:
+        """
+        一站式接口：意图解析 -> Hybrid Recall -> 余弦相似度 rerank，返回可直接用于前端展示的推荐结果。
+
+        返回结构示例：
+        {
+            "intent": {...},            # 结构化 QueryIntent（dict）
+            "items": [
+                {
+                    "product_id": "...",
+                    "score": 0.93,
+                    "similarity": 0.93,
+                    "distance": 0.07,
+                    "metadata": {...},  # 来自 Chroma 中的 metadatas
+                },
+                ...
+            ],
+        }
+        """
+        # 1. 解析查询意图
+        intent = self.analyze_intent(
+            user_id=user_id,
+            query=query,
+            user_profile=user_profile,
+            history=history,
+            timeout=timeout,
+        )
+
+        # 2. Hybrid Recall：取一个稍大的候选集，便于 rerank（例如 3 倍 top_k）
+        recall_top_k = max(top_k * 3, top_k)
+        recall_result = self.hybrid_recall(
+            intent=intent,
+            top_k=recall_top_k,
+            include=["metadatas", "distances", "documents"],
+        )
+
+        # 3. 基于“distance -> similarity”的简单 rerank
+        ranked_items = self.rerank_with_cosine_and_business_rules(
+            recall_result=recall_result,
+            top_k=top_k,
+        )
+
+        logger.info(
+            "SmartRecommendationEngine.recommend 完成: user_id=%s, query=%s, 命中=%d",
+            user_id,
+            query,
+            len(ranked_items),
+        )
+
+        return {
+            "intent": asdict(intent),
+            "items": ranked_items,
+        }
 
     def _load_embeddings(self):
         """

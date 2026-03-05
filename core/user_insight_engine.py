@@ -132,7 +132,18 @@ class UserInsightEngine:
         try:
             res = self.persona_collection.get(ids=[user_id], include=["embeddings"])
         except Exception as exc:  # noqa: BLE001
-            logger.error("获取用户画像失败 user_id=%s, err=%s", user_id, exc)
+            # 对于 Chroma 在冷启动或空集合下抛出的
+            # "Error creating hnsw segment reader: Nothing found on disk"
+            # 视为正常情况，仅作为信息级日志提示，避免在控制台刷 ERROR。
+            msg = str(exc)
+            if "Nothing found on disk" in msg or "hnsw segment reader" in msg:
+                logger.info(
+                    "获取用户画像时发现 user_personas 为空，视为冷启动用户: user_id=%s, err=%s",
+                    user_id,
+                    exc,
+                )
+            else:
+                logger.error("获取用户画像失败 user_id=%s, err=%s", user_id, exc)
             return None
 
         emb_list = res.get("embeddings")

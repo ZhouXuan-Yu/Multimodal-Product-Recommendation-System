@@ -990,14 +990,29 @@ const fetchData = async () => {
     if (filters.action) params.action = filters.action
     if (filters.category) params.category = filters.category
     if (filters.q) params.q = filters.q
-    const { data } = await fetchInsightEvents(props.userId, params)
+
+    let data
+    try {
+      // 尝试从后端拉取真实数据
+      const resp = await fetchInsightEvents(props.userId, params)
+      data = resp?.data || {}
+    } catch (err) {
+      // 请求失败时，不中断整体流程，改为记录日志并完全使用本地 mock
+      console.error('加载行为洞察数据失败，将使用本地 mock 概览：', err)
+      data = {}
+    }
+
     const mockOverview = buildMockOverview()
-    const realOverview = data?.overview || null
+    const realOverview = data.overview || null
     const mergedOverview = mergeOverviewWithMock(mockOverview, realOverview)
+
+    // 如果后端没有返回事件数组，也给一个空数组，避免后续逻辑拿到 undefined
+    const eventsFromApi = Array.isArray(data.events) ? data.events : []
+
     raw.value = {
       overview: mergedOverview,
       // 明细事件仍然保留真实数据本身（用于钻取 / 异常检测等）
-      events: Array.isArray(data?.events) ? data.events : [],
+      events: eventsFromApi,
     }
   } finally {
     loading.value = false

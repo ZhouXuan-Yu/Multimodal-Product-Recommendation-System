@@ -936,6 +936,92 @@ const buildVectorDriftOption = (payload, focusProductId, focusProductName) => {
   }
 }
 
+// 基于当前用户事件，在前端本地构造一条「向量偏移轨迹」mock，用于后端未实现 / 无数据时兜底
+const buildLocalVectorDriftMock = (focusProductId, focusProductName) => {
+  if (!focusProductId) return { points: [], segments: [] }
+
+  // 仅取该商品相关事件，并按时间排序
+  const related = events.value
+    .filter((e) => e.product_id === focusProductId)
+    .slice()
+    .sort((a, b) => {
+      const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0
+      const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0
+      return ta - tb
+    })
+
+  if (!related.length) return { points: [], segments: [] }
+
+  // 将常见行为映射到「语义方向」，形成一条轻微抖动的二维轨迹
+  const actionVector = (act) => {
+    switch (act) {
+      case 'search':
+        return [0.6, 0.1]
+      case 'view':
+        return [0.4, 0.2]
+      case 'click':
+        return [0.5, 0.5]
+      case 'favorite':
+        return [0.3, 0.7]
+      case 'add_to_cart':
+        return [0.2, 0.9]
+      case 'purchase':
+        return [0.1, 1.0]
+      default:
+        return [0.25, 0.25]
+    }
+  }
+
+  const actionSemantic = (act) => {
+    switch (act) {
+      case 'search':
+        return '用户通过搜索开始探索该方向兴趣，产生了新的语义探测点。'
+      case 'view':
+        return '浏览行为轻微拉近了与该商品主题的距离，用于补充基本认知。'
+      case 'click':
+        return '点击行为显著增强了该商品在当前兴趣向量中的权重。'
+      case 'favorite':
+        return '收藏行为让该商品在长期兴趣空间中占据了更稳定的位置。'
+      case 'add_to_cart':
+        return '加购行为将兴趣从浅层意向推向强购买意图方向。'
+      case 'purchase':
+        return '购买行为在该语义方向上形成了一个高权重锚点，对画像有持续影响。'
+      default:
+        return '该行为对画像有轻微微调作用，用于平滑近期兴趣走势。'
+    }
+  }
+
+  const points = []
+  const segments = []
+  let x = 0
+  let y = 0
+
+  related.forEach((e, idx) => {
+    const [dx, dy] = actionVector(e.action)
+    x += dx
+    y += dy
+    const deltaNorm = Math.sqrt(dx * dx + dy * dy)
+
+    points.push({
+      x,
+      y,
+      action: e.action || 'unknown',
+      product_id: focusProductId,
+      delta_norm: deltaNorm,
+    })
+
+    if (idx > 0) {
+      segments.push({
+        from_step: idx - 1,
+        to_step: idx,
+        semantic_shift: actionSemantic(e.action),
+      })
+    }
+  })
+
+  return { points, segments, product_id: focusProductId, product_name: focusProductName }
+}
+
 const buildSankeyOption = (payload) => {
   if (!payload || !Array.isArray(payload.nodes) || !payload.nodes.length) {
     return {
@@ -1024,7 +1110,19 @@ const initOrUpdateVectorDriftChart = async () => {
   await nextTick()
   if (vectorDriftRef.value && !vectorDriftChart) vectorDriftChart = echarts.init(vectorDriftRef.value)
 
-  const { data } = await fetchVectorDrift(props.userId, { max_events: 120 })
+  let data
+  try {
+    const resp = await fetchVectorDrift(props.userId, { max_events: 120 })
+    data = resp?.data
+  } catch (err) {
+    console.error('向量偏移轨迹接口异常，将回退到前端 mock：', err)
+  }
+
+  // 若后端未返回可用点位，则基于当前用户事件在前端构造一条 mock 轨迹
+  if (!data || !Array.isArray(data.points) || !data.points.length) {
+    data = buildLocalVectorDriftMock(drill.productId, drill.productName)
+  }
+
   const option = buildVectorDriftOption(data, drill.productId, drill.productName)
   vectorDriftChart?.setOption(option, true)
 }

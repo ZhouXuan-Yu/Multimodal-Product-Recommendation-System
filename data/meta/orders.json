@@ -124,6 +124,25 @@
       "note": null,
       "payment_channel": "mock_pay",
       "paid_at": "2026-03-05T18:07:17.548435"
+    },
+    "local-1241515924qqcom-20260305193620044": {
+      "order_id": "local-1241515924qqcom-20260305193620044",
+      "user_id": "1241515924@qq.com",
+      "status": "paid",
+      "items": [
+        {
+          "product_id": "p_4_101",
+          "quantity": 9,
+          "unit_price": 16.12
+        }
+      ],
+      "total_amount": 145.08,
+      "currency": "CNY",
+      "created_at": "2026-03-05T19:36:20.044658",
+      "updated_at": "2026-03-05T19:36:22.858647",
+      "note": null,
+      "payment_channel": "mock_pay",
+      "paid_at": "2026-03-05T19:36:22.858647"
     }
   }
 }

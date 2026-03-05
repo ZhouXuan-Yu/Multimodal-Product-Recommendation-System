@@ -108,7 +108,16 @@ export function fetchVectorDrift(userId, params = {}) {
 export function fetchBehaviorSankey(userId, params = {}) {
   // params: { limit? }
   return withInsightMock(
-    () => instance.get(`/api/insights/${userId}/behavior_sankey`, { params }),
+    async () => {
+      const resp = await instance.get(`/api/insights/${userId}/behavior_sankey`, { params })
+      const data = resp?.data
+      // 对于桑基图，如果后端没有返回有效节点（nodes 为空），也视为“无有效数据”，触发前端 mock 兜底，
+      // 避免前端一直停留在「请选择任一商品后，将自动加载...」的占位提示上。
+      if (!data || !Array.isArray(data.nodes) || !data.nodes.length) {
+        throw new Error('behavior_sankey: empty nodes from backend, fallback to mock')
+      }
+      return resp
+    },
     mockFetchBehaviorSankey,
     userId,
     params,

@@ -258,10 +258,12 @@
 
             <div class="ic-card-inner glass-panel wide">
               <div class="ic-inner-title">行为轨迹流 · 多模态路径桑基图</div>
-              <div v-if="!sankeyReady" class="ic-hint">
-                选择任一商品后，将自动加载从搜索 / 入口到详情再到反馈的行为路径。
+              <!-- 始终渲染图表容器，避免 sankeyReady 与 DOM 挂载形成相互依赖 -->
+              <div ref="sankeyRef" class="ic-chart small">
+                <div v-if="!sankeyReady" class="ic-hint">
+                  选择任一商品后，将自动加载从搜索 / 入口到详情再到反馈的行为路径。
+                </div>
               </div>
-              <div v-else ref="sankeyRef" class="ic-chart small"></div>
             </div>
           </div>
         </div>

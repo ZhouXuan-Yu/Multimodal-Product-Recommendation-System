@@ -261,8 +261,8 @@
                         {{ authUser?.email || '未绑定邮箱' }}
                       </div>
                       <div class="identity-tags">
-                        <span class="identity-tag accent">AI 研究 · 杭州</span>
-                        <span class="identity-tag subtle">本机 RTX 5060 环境</span>
+                        <span class="identity-tag accent">技术狂热者</span>
+                        <span class="identity-tag subtle">本人咸鱼，有事烧香</span>
                       </div>
                     </div>
                   </div>
@@ -817,6 +817,13 @@ watch(
   (view) => {
     if (view === 'profile' && !personaSummary.value && authUser.value) {
       loadPersonaInsight()
+    }
+    // 当从其他视图切换到「个人数据洞察中心」时，手动触发一次 window.resize，
+    // 让已经初始化但在隐藏容器中创建的 ECharts 图表重新计算宽高并完成自适应渲染。
+    if (view === 'analytics') {
+      window.setTimeout(() => {
+        window.dispatchEvent(new Event('resize'))
+      }, 50)
     }
   },
 )

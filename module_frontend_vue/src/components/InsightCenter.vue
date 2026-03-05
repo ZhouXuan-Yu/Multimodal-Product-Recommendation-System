@@ -571,6 +571,103 @@ const drill = reactive({
 const loading = ref(false)
 const raw = ref({ overview: null, events: [] })
 
+// 基础虚拟概览数据：保证在没有真实数据时基础图表也有内容可看
+const buildMockTimeseries = () => {
+  const days = []
+  const today = new Date()
+  // 生成最近 28 天的简单阶梯型趋势（非随机，保证每次刷新一致）
+  for (let i = 27; i >= 0; i -= 1) {
+    const d = new Date(today)
+    d.setDate(d.getDate() - i)
+    const iso = d.toISOString().slice(0, 10)
+    const base = 6 + ((27 - i) % 7) * 3
+    days.push({ day: iso, value: base })
+  }
+  return days
+}
+
+const buildMockOverview = () => {
+  return {
+    kpis: {
+      // 与界面文案匹配的一组示例数据
+      events: 364,
+      active_days: 28,
+      unique_products: 104,
+    },
+    distribution: {
+      by_action: [
+        { name: 'view', value: 120 },
+        { name: 'click', value: 84 },
+        { name: 'add_to_cart', value: 49 },
+        { name: 'search', value: 36 },
+      ],
+      by_category: [
+        { name: "women's clothing", value: 96 },
+        { name: 'electronics', value: 67 },
+        { name: "men's clothing", value: 52 },
+        { name: 'jewelery', value: 49 },
+      ],
+    },
+    timeseries: buildMockTimeseries(),
+  }
+}
+
+// 将真实概览数据叠加在虚拟数据之上：真实值作为增量累加到 mock 上
+const mergeOverviewWithMock = (mockOverview, realOverview) => {
+  const mock = mockOverview || {}
+  const real = realOverview || {}
+
+  const mergeKpis = (key) =>
+    (mock.kpis?.[key] || 0) + (real.kpis?.[key] || 0)
+
+  const mergeDist = (mockArr = [], realArr = []) => {
+    const map = new Map()
+    for (const item of mockArr) {
+      if (!item || !item.name) continue
+      const n = Number(item.value) || 0
+      map.set(item.name, { name: item.name, value: n })
+    }
+    for (const item of realArr) {
+      if (!item || !item.name) continue
+      const prev = map.get(item.name) || { name: item.name, value: 0 }
+      const n = Number(item.value) || 0
+      prev.value += n
+      map.set(item.name, prev)
+    }
+    return [...map.values()].sort((a, b) => b.value - a.value)
+  }
+
+  const mergeTimeseries = (mockTs = [], realTs = []) => {
+    const map = new Map()
+    for (const item of [...mockTs, ...realTs]) {
+      if (!item || !item.day) continue
+      const v = Number(item.value) || 0
+      map.set(item.day, (map.get(item.day) || 0) + v)
+    }
+    const days = [...map.keys()].sort()
+    return days.map((day) => ({ day, value: map.get(day) }))
+  }
+
+  return {
+    kpis: {
+      events: mergeKpis('events'),
+      active_days: mergeKpis('active_days'),
+      unique_products: mergeKpis('unique_products'),
+    },
+    distribution: {
+      by_action: mergeDist(
+        mock.distribution?.by_action || [],
+        real.distribution?.by_action || [],
+      ),
+      by_category: mergeDist(
+        mock.distribution?.by_category || [],
+        real.distribution?.by_category || [],
+      ),
+    },
+    timeseries: mergeTimeseries(mock.timeseries || [], real.timeseries || []),
+  }
+}
+
 const overview = computed(() => raw.value.overview)
 const events = computed(() => raw.value.events || [])
 
@@ -894,7 +991,14 @@ const fetchData = async () => {
     if (filters.category) params.category = filters.category
     if (filters.q) params.q = filters.q
     const { data } = await fetchInsightEvents(props.userId, params)
-    raw.value = { overview: data.overview, events: data.events }
+    const mockOverview = buildMockOverview()
+    const realOverview = data?.overview || null
+    const mergedOverview = mergeOverviewWithMock(mockOverview, realOverview)
+    raw.value = {
+      overview: mergedOverview,
+      // 明细事件仍然保留真实数据本身（用于钻取 / 异常检测等）
+      events: Array.isArray(data?.events) ? data.events : [],
+    }
   } finally {
     loading.value = false
   }
@@ -955,13 +1059,27 @@ const renderSemanticDiff = async () => {
       typeof d.summary_text === 'string' && d.summary_text.trim().length > 0
     const hasBoard = board.length > 0
     const hasHealth =
-      !!(d.health &&
-      (d.health.overall_health ||
-        d.health.behavior_depth_health ||
-        d.health.suggested_action))
+      !!(
+        d.health &&
+        (d.health.overall_health ||
+          d.health.behavior_depth_health ||
+          d.health.suggested_action)
+      )
 
-    // 如果后端没有返回可用内容（字段缺失或全为空），则用前端本地 mock 做二次兜底
-    if (!hasSummary && !hasBoard && !hasHealth) {
+    // 部分后端会返回一段“所有核心KPI均为零 / 系统未激活”的占位文案，我们也视为“无有效数据”
+    const isNoDataSummary =
+      typeof d.summary_text === 'string' &&
+      (
+        // 你截图里的实际文案：两个周期内所有核心KPI（事件、曝光、点击、转化）均为零...
+        d.summary_text.includes('所有核心KPI') ||
+        // 兜一下可能的其他提示话术
+        d.summary_text.includes('系统可能处于未激活') ||
+        d.summary_text.includes('完全无用户活动')
+      ) &&
+      d.summary_text.includes('均为零')
+
+    // 如果后端没有返回可用内容（字段缺失、全为空或仅有“无数据占位文案”），则用前端本地 mock 做二次兜底
+    if ((!hasSummary || isNoDataSummary) && !hasBoard && !hasHealth) {
       semanticDiff.value = mockFetchInsightSemanticDiff(props.userId, params)
     } else {
       // 同时把语义维度表标准化回组件预期格式，避免出现 undefined 结构导致模板渲染为空

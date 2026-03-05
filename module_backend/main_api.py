@@ -1079,7 +1079,8 @@ def _build_vector_drift_for_user(
     - 每条边提供向量位移大小（范数）与规则版语义解释，便于前端做 Tooltip。
     """
     users_doc = read_json(USERS_PROFILE_JSON, default={"users": {}})
-    profile: Dict[str, Any] = users_doc.get("users", {}).get(user_id, {})
+    users = users_doc.setdefault("users", {})
+    profile: Dict[str, Any] = users.get(user_id, {})
     history: list[dict[str, Any]] = profile.get("history", []) if isinstance(profile, dict) else []
 
     if not history:
@@ -1849,9 +1850,17 @@ def get_semantic_diff(
     - 将结构化 period_a / period_b 作为 DeepSeek 的输入，生成「语义差分看板」所需 JSON；
     - 若 DeepSeek 不可用，则返回规则版的降级结果，字段结构与提示词约定保持一致。
     """
+    # 读取/初始化本地画像文档，确保结构稳定
     users_doc = read_json(USERS_PROFILE_JSON, default={"users": {}})
-    profile: Dict[str, Any] = users_doc.get("users", {}).get(user_id, {})
-    history: list[dict[str, Any]] = profile.get("history", []) if isinstance(profile, dict) else []
+    users: Dict[str, Any] = users_doc.get("users") or {}
+    if not isinstance(users, dict):
+        users = {}
+        users_doc["users"] = users
+
+    profile: Dict[str, Any] = users.get(user_id, {}) if isinstance(users, dict) else {}
+    history: list[dict[str, Any]] = (
+        profile.get("history", []) if isinstance(profile, dict) else []
+    )
 
     products_map = load_products_map()
 
@@ -1951,8 +1960,14 @@ def get_insight_report(user_id: str, days: int = Query(default=7, ge=1, le=30)) 
     输出：
         - 一段适合直观展示的画像摘要 summary。
     """
+    # 读取/初始化本地画像文档，确保 users 结构稳定
     users_doc = read_json(USERS_PROFILE_JSON, default={"users": {}})
-    profile: Dict[str, Any] = users_doc.get("users", {}).get(user_id, {})
+    users: Dict[str, Any] = users_doc.get("users") or {}
+    if not isinstance(users, dict):
+        users = {}
+        users_doc["users"] = users
+
+    profile: Dict[str, Any] = users.get(user_id, {}) if isinstance(users, dict) else {}
     history: list[dict[str, Any]] = profile.get("history", []) if isinstance(profile, dict) else []
 
     products_map = load_products_map()
@@ -1994,6 +2009,18 @@ def get_insight_report(user_id: str, days: int = Query(default=7, ge=1, le=30)) 
             "近期你在本平台的浏览和点击行为呈现出较为集中的兴趣方向，"
             "系统已根据这些线索动态更新你的个性化画像，用于后续推荐和洞察展示。"
         )
+
+    # 将本次画像总结持久化到本地画像文件，便于 PyQt 管理端展示“画像与数据说明”
+    try:
+        if not isinstance(profile, dict):
+            profile = {}
+        profile["last_insight_summary"] = summary
+        profile["last_insight_generated_at"] = datetime.utcnow().isoformat()
+        users[user_id] = profile
+        users_doc["users"] = users
+        atomic_write_json(USERS_PROFILE_JSON, users_doc)
+    except Exception as exc:  # noqa: BLE001
+        print("[backend] 写入画像总结到 users_profile.json 失败（已忽略）：", exc)
 
     return InsightReport(
         user_id=user_id,
@@ -2403,16 +2430,19 @@ def smart_recommend(req: RecommendRequest) -> dict[str, Any]:
 class ChatRequest(BaseModel):
     user_id: str
     message: str
+    # 简单的多轮上下文，用于 DeepSeek 还原最近几轮对话
+    context: List[Dict[str, Any]] | None = None
 
 
 @app.post("/api/ai_chat")
 def ai_chat(req: ChatRequest) -> dict[str, Any]:
     """
-    极简版 AI 导购对话接口：
-    - 使用与 /api/recommend 相同的召回逻辑
-    - 返回一段自然语言回复 + product_suggestions 列表
+    DeepSeek 驱动的智能导购对话接口。
+
+    - 先从向量库召回一批候选商品；
+    - 再将候选 + 用户当前输入 + 最近几轮对话一起交给 DeepSeek，让其在「衣服 / 首饰」品类内做精排与对话生成；
+    - 返回一段自然语言回复 + product_suggestions 列表 + query_suggestion（联动前端商品瀑布流）。
     """
-    # 直接复用 recommend 的候选集逻辑
     print(
         "[backend] /api/ai_chat 收到请求：",
         {
@@ -2420,45 +2450,174 @@ def ai_chat(req: ChatRequest) -> dict[str, Any]:
             "message": (req.message[:80] + "...") if len(req.message) > 80 else req.message,
         },
     )
+
+    # 1）召回候选：优先使用向量检索，失败时退回静态候选集
     try:
-        # 首选向量召回，若失败或为空则回退到静态候选集
-        candidates = retrieve_top_k(query=req.message, top_k=6)
+        candidates = retrieve_top_k(query=req.message, top_k=24)
         if not candidates:
             raise RuntimeError("Empty candidates from vector DB for ai_chat.")
     except Exception:  # noqa: BLE001
-        candidates = get_default_candidates(limit=6)
+        candidates = get_default_candidates(limit=50)
 
     if not candidates:
         print("[backend] /api/ai_chat 没有召回到候选商品")
         return {
-            "reply": "我暂时没有找到与之匹配的商品，但后续会为你补充更多货品，请稍后再试。",
+            "reply": "我暂时没有找到与之匹配的商品，但后续会为你补充更多服饰与配饰货品，请稍后再试。",
             "product_suggestions": [],
         }
 
-    products_brief = [
-        {
-            "product_id": p.get("product_id"),
-            "name": p.get("name"),
-            "price": p.get("price"),
-            "image_url": f"/static/images/{Path(p.get('image_path', '')).name}",
-        }
-        for p in candidates[:4]
+    # 2）在召回集合中优先过滤出「衣服 / 首饰」品类，满足你的导购场景
+    allowed_categories_for_styling = {"men's clothing", "women's clothing", "jewelery"}
+    fashion_candidates: list[dict[str, Any]] = [
+        p for p in candidates if p.get("category") in allowed_categories_for_styling
     ]
+    if not fashion_candidates:
+        # 若本次召回中没有服饰 / 首饰，则回退为全品类候选，但在 Prompt 中强调优先挑选相关品类
+        fashion_candidates = candidates
 
-    reply = (
-        "我根据你的描述，从多模态特征空间中为你挑选了一批更匹配的候选商品，"
-        "你可以在右侧推荐瀑布流中查看详情并继续微调偏好。"
-    )
+    # 为 DeepSeek 准备精简版候选信息
+    fashion_view = []
+    for p in fashion_candidates:
+        fashion_view.append(
+            {
+                "product_id": p.get("product_id"),
+                "name": p.get("name"),
+                "price": p.get("price"),
+                "category": p.get("category"),
+                "tags": p.get("tags", []),
+                "image_url": f"/static/images/{Path(p.get('image_path', '')).name}"
+                if p.get("image_path")
+                else None,
+            }
+        )
 
-    print(
-        "[backend] /api/ai_chat 返回结果概览：",
-        {"suggestion_count": len(products_brief), "has_query_suggestion": bool(req.message)},
-    )
-    return {
-        "reply": reply,
-        "product_suggestions": products_brief,
-        "query_suggestion": req.message,
+    agent = DeepSeekAgent()
+    prompt_payload: Dict[str, Any] = {
+        "user_id": req.user_id,
+        "message": req.message,
+        "recent_context": req.context or [],
+        "allowed_categories": list(allowed_categories_for_styling),
+        "candidates": fashion_view[:24],
+        "rules": {
+            "goal": "作为电商导购，结合用户描述与候选商品，优先挑选合适的衣服和首饰进行推荐。",
+            "constraints": [
+                "尽量从服饰（男装、女装）和珠宝配饰类目中选择商品；只有当用户明确提到电子产品时再推荐 electronics。",
+                "控制推荐数量在 3~6 件之间，每件给出 1 句左右简短、具体的推荐理由。",
+                "在自然语言回复中，可以用分点或分段解释搭配建议，但不要输出任何 markdown 代码块。",
+            ],
+            "output_schema": {
+                "reply": "string，自然语言中文回复，对用户进行导购与搭配说明。",
+                "query_suggestion": "string，供前端商品瀑布流联动使用的检索意图，可为空字符串。",
+                "product_suggestions": [
+                    {
+                        "product_id": "string，必须来自 candidates 列表中的某个 product_id。",
+                        "name": "string，商品标题或摘要名称。",
+                        "price": "number，商品价格。",
+                        "image_url": "string，商品封面图 URL。",
+                        "reason": "string，简短推荐理由，突出适配该用户需求的关键点。",
+                    }
+                ],
+            },
+        },
     }
+
+    try:
+        raw = agent._chat(  # noqa: SLF001
+            system_prompt=(
+                "你是电商平台的智能穿搭与配饰导购助手，擅长在衣服和珠宝首饰中为用户做精细化推荐。"
+                "你必须严格返回一个合法 JSON 对象，结构与用户提供的 output_schema 完全一致，"
+                "不要输出 markdown 代码块（不要有 ```json 或 ```），也不要输出任何多余解释文字。"
+            ),
+            user_content=json.dumps(prompt_payload, ensure_ascii=False, indent=2),
+            timeout=60,
+        )
+        parsed = DeepSeekAgent._extract_json(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError("DeepSeek parsed result is not a dict")
+
+        reply_text = str(parsed.get("reply") or "").strip()
+        query_suggestion = str(parsed.get("query_suggestion") or "").strip() or req.message
+        products_raw = parsed.get("product_suggestions") or []
+        if not isinstance(products_raw, list):
+            products_raw = []
+
+        # 只保留在候选集合中的合法商品，并限制返回数量
+        candidate_map = {p["product_id"]: p for p in fashion_view if p.get("product_id")}
+        product_suggestions: list[dict[str, Any]] = []
+        for item in products_raw:
+            pid = str(item.get("product_id") or "")
+            base = candidate_map.get(pid)
+            if not pid or not base:
+                continue
+            product_suggestions.append(
+                {
+                    "product_id": pid,
+                    "name": item.get("name") or base.get("name"),
+                    "price": item.get("price") or base.get("price"),
+                    "image_url": item.get("image_url") or base.get("image_url"),
+                    "reason": str(item.get("reason") or "").strip()
+                    or "基于你的当前需求与历史偏好，AI 认为这件商品整体契合度较高。",
+                }
+            )
+            if len(product_suggestions) >= 6:
+                break
+
+        # 若模型没给出自然语言回复或商品列表，则使用规则兜底
+        if not reply_text:
+            reply_text = (
+                "我已经根据你的描述，从服饰与珠宝配饰候选中筛选出一批更匹配的商品，"
+                "你可以优先关注这些推荐，并在需要时告诉我更具体的预算或场景。"
+            )
+
+        if not product_suggestions:
+            # 兜底：直接从 fashion_view 中取前 4 件
+            for p in fashion_view[:4]:
+                product_suggestions.append(
+                    {
+                        "product_id": p.get("product_id"),
+                        "name": p.get("name"),
+                        "price": p.get("price"),
+                        "image_url": p.get("image_url"),
+                        "reason": "基于你的当前需求和相似用户的历史行为精选出的候选商品。",
+                    }
+                )
+
+        print(
+            "[backend] /api/ai_chat 返回结果概览（DeepSeek）:",
+            {
+                "suggestion_count": len(product_suggestions),
+                "has_query_suggestion": bool(query_suggestion),
+            },
+        )
+        return {
+            "reply": reply_text,
+            "product_suggestions": product_suggestions,
+            "query_suggestion": query_suggestion,
+        }
+    except Exception as exc:  # noqa: BLE001
+        # 出现任何 DeepSeek 或 JSON 解析问题时，退回到简单候选逻辑，保证前端体验不中断
+        print(
+            "[backend] /api/ai_chat DeepSeek 调用失败，将使用规则兜底：",
+            {"error": repr(exc)},
+        )
+        products_brief = [
+            {
+                "product_id": p.get("product_id"),
+                "name": p.get("name"),
+                "price": p.get("price"),
+                "image_url": f"/static/images/{Path(p.get('image_path', '')).name}",
+            }
+            for p in fashion_candidates[:4]
+        ]
+        reply = (
+            "当前 DeepSeek 智能导购服务暂时不可用，我先根据多模态向量相似度为你挑选了一些候选商品，"
+            "你可以在右侧推荐瀑布流中继续浏览和筛选。"
+        )
+        return {
+            "reply": reply,
+            "product_suggestions": products_brief,
+            "query_suggestion": req.message,
+        }
 
 
 def _persist_action_and_update_persona(req: ActionLogRequest) -> None:

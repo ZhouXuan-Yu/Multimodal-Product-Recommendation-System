@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
+import random
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -44,13 +45,77 @@ def compute_user_table() -> list[dict[str, Any]]:
     """用户列表：用于在 PyQt 表格中展示核心画像。"""
     users_doc = _load_users_doc()
     users = users_doc.get("users", {})
+
+    # 若暂无真实用户画像，则构造一批轻量级模拟用户，避免 PyQt 侧完全空白
+    if not users:
+        mock_users: dict[str, Any] = {}
+        base_tags = [
+            ["新用户", "待冷启动"],
+            ["高价值用户", "偏好数码"],
+            ["高频浏览", "爱逛服饰"],
+            ["理性消费", "价格敏感"],
+        ]
+        today = datetime.utcnow().date()
+        for i in range(1, 9):
+            uid = f"mock_user_{i:03d}"
+            score = random.randint(20, 95)
+            tags = base_tags[i % len(base_tags)]
+            # 用简单整数数组模拟 recent_activity，便于前端和 PyQt 同时消费
+            recent = [random.randint(1, 5) for _ in range(30)]
+            mock_users[uid] = {
+                "name": uid,
+                "activity_score": score,
+                "core_tags": tags,
+                "recent_activity": recent,
+                # 为管理端预生成一段“画像说明”，即使尚未通过后端 DeepSeek 生成真实报告，
+                # 也能在 PyQt 表格中看到专业感较强的一句话摘要。
+                "last_insight_summary": (
+                    f"该用户最近 30 天整体活跃度约为 {score} 分，偏好标签集中在「{tags[0]}」「{tags[1]}」，"
+                    "适合在推荐中重点曝光相关品类，并结合价格敏感度做差异化运营。"
+                ),
+                "history": [
+                    {
+                        "product_id": f"MOCK-{(i + j) % 10 + 1}",
+                        "action": random.choice(["view", "click", "purchase"]),
+                        "timestamp": datetime.combine(
+                            today - timedelta(days=random.randint(0, 20)),
+                            datetime.min.time(),
+                        ).isoformat(),
+                    }
+                    for j in range(12)
+                ],
+            }
+        users_doc["users"] = mock_users
+        users = mock_users
+
     rows: list[dict[str, Any]] = []
     for uid, info in users.items():
+        activity_score = info.get("activity_score", 0)
+        core_tags_raw = info.get("core_tags", [])
+        core_tags = ", ".join(core_tags_raw)
+
+        # 若后端已生成并持久化“画像与数据说明”，在此一并带给 PyQt；
+        # 否则根据标签和活跃度自动生成一段降级画像摘要，避免前端看到空白。
+        persona_summary = info.get("last_insight_summary", "") or ""
+        if not persona_summary:
+            if core_tags_raw:
+                main_tag = core_tags_raw[0]
+                persona_summary = (
+                    f"该用户近期活跃度约为 {activity_score} 分，核心标签偏向「{main_tag}」，"
+                    "适合作为重点运营人群进行个性化推荐与活动触达。"
+                )
+            else:
+                persona_summary = (
+                    f"该用户近期活跃度约为 {activity_score} 分，行为尚不充分，"
+                    "系统将继续收集浏览与下单记录以完善个性化画像。"
+                )
+
         rows.append(
             {
                 "user_id": uid,
-                "activity_score": info.get("activity_score", 0),
-                "core_tags": ", ".join(info.get("core_tags", [])),
+                "activity_score": activity_score,
+                "core_tags": core_tags,
+                "persona_summary": persona_summary,
             }
         )
     return rows
@@ -113,6 +178,15 @@ def compute_daily_activity(window_days: int = 30) -> List[Dict[str, Any]]:
         day = ts.date().isoformat()
         by_day_orders[day] += 1
 
+    # 若行为与订单全为空，则构造一段近 30 天的模拟曲线，避免趋势图完全空白
+    if not by_day_events and not by_day_orders:
+        today = datetime.utcnow().date()
+        for i in range(29, -1, -1):
+            day = (today - timedelta(days=i)).isoformat()
+            base = random.randint(5, 40)
+            by_day_events[day] = base + random.randint(0, 20)
+            by_day_orders[day] = max(0, base // random.randint(6, 10))
+
     all_days = sorted(set(by_day_events.keys()) | set(by_day_orders.keys()))
     # 只展示最近 window_days 天，避免时间跨度过长影响阅读
     if len(all_days) > window_days:
@@ -172,6 +246,38 @@ def compute_recommendation_effect() -> dict[str, Any]:
     else:
         orders = orders_raw or []
 
+    # 若还没有真实订单，则基于模拟用户与商品价格随机生成一小批本地订单
+    if not orders:
+        products = safe_load_json(PRODUCTS_JSON, [])
+        today = datetime.utcnow().date()
+        for i, uid in enumerate(list(users.keys())[:5] or ["mock_user_001"]):
+            if not products:
+                break
+            p = random.choice(products)
+            amount = float(p.get("price", 99.0) or 99.0) * random.randint(1, 3)
+            created = datetime.combine(
+                today - timedelta(days=random.randint(0, 10)),
+                datetime.min.time(),
+            ).isoformat()
+            orders.append(
+                {
+                    "order_id": f"MOCK-{uid}-{i+1}",
+                    "user_id": uid,
+                    "status": "paid",
+                    "items": [
+                        {
+                            "product_id": p.get("product_id", f"MOCK-{i+1}"),
+                            "quantity": 1,
+                            "unit_price": p.get("price", 99.0),
+                        }
+                    ],
+                    "total_amount": amount,
+                    "currency": "CNY",
+                    "created_at": created,
+                    "updated_at": created,
+                }
+            )
+
     total_orders = len(orders)
     revenue = 0.0
     for o in orders:
@@ -181,6 +287,14 @@ def compute_recommendation_effect() -> dict[str, Any]:
             continue
 
     avg_order_value = revenue / total_orders if total_orders else 0.0
+
+    # 若当前埋点中尚未显式上报 view / purchase 行为，则做一次 Demo 级兜底：
+    # - 将 views 近似视为所有事件数，用于估算 CTR；
+    # - 将 purchases 近似视为真实订单数，用于估算 CVR。
+    if views == 0 and total_events > 0:
+        views = total_events
+    if purchases == 0 and total_orders > 0:
+        purchases = total_orders
 
     ctr = (clicks / views) if views > 0 else 0.0
     cvr = (purchases / clicks) if clicks > 0 else 0.0

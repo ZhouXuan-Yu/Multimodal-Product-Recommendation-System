@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import sys
 from typing import Any, Dict
@@ -18,10 +19,13 @@ if _qt_app is None:
 import pyqtgraph as pg
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import (
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QPushButton,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -74,9 +78,9 @@ class DashboardWindow(QMainWindow):
         self.setWindowTitle("管理员监控大屏")
         self.resize(1360, 860)
 
-        # 全局配色给到 pyqtgraph
-        pg.setConfigOption("background", "#020617")  # deep dark
-        pg.setConfigOption("foreground", "#e5e7eb")
+        # 全局配色给到 pyqtgraph（浅色学术风）
+        pg.setConfigOption("background", "#FFFFFF")
+        pg.setConfigOption("foreground", "#111827")
 
         # 加载外部 QSS 皮肤（如果存在）
         self._load_stylesheet()
@@ -84,13 +88,23 @@ class DashboardWindow(QMainWindow):
         root = QWidget()
         self.setCentralWidget(root)
 
-        # 顶层：左右分栏布局（左侧导航 + 右侧主内容）
+        # 顶层：左右分栏布局（左侧导航 + 右侧主内容），使用 QSplitter 便于拖拽调整宽度
         root_layout = QHBoxLayout(root)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        splitter = QSplitter()
+        splitter.setObjectName("RootSplitter")
+        root_layout.addWidget(splitter)
 
         # ======================
         # 左侧导航栏（品牌 + 按钮）
         # ======================
-        sidebar = QVBoxLayout()
+        sidebar_container = QWidget()
+        sidebar_container.setObjectName("Sidebar")
+        sidebar = QVBoxLayout(sidebar_container)
+        sidebar.setContentsMargins(16, 16, 16, 16)
+        sidebar.setSpacing(12)
 
         self.brand_label = QLabel("Aprogress 管理后台")
         self.brand_label.setObjectName("BrandLabel")
@@ -118,95 +132,105 @@ class DashboardWindow(QMainWindow):
         sidebar.addWidget(self.refresh_btn)
 
         # ======================
-        # 右侧主内容区
+        # 右侧主内容区（Bento Grid 卡片布局）
         # ======================
-        main = QVBoxLayout()
+        main_container = QWidget()
+        main_container.setObjectName("MainArea")
+        main_layout = QVBoxLayout(main_container)
+        main_layout.setContentsMargins(16, 16, 16, 16)
+        main_layout.setSpacing(12)
 
-        # 顶部状态栏：摘要 + 最近更新时间占位
-        top_bar = QHBoxLayout()
+        # 顶部：4 个极简统计 Tile（学术智库风）
+        tiles_card = QFrame()
+        tiles_card.setObjectName("TilesCard")
+        tiles_layout = QGridLayout(tiles_card)
+        tiles_layout.setContentsMargins(12, 12, 12, 12)
+        tiles_layout.setSpacing(12)
 
-        self.title_label = QLabel("运营 & 推荐系统总览")
-        self.title_label.setObjectName("TitleLabel")
-        top_bar.addWidget(self.title_label)
+        def _build_tile(title: str) -> QLabel:
+            tile = QFrame()
+            tile.setObjectName("StatTile")
+            v = QVBoxLayout(tile)
+            label = QLabel(title)
+            label.setObjectName("TileLabel")
+            value = QLabel("--")
+            value.setObjectName("TileValue")
+            v.addWidget(label)
+            v.addWidget(value)
+            v.addStretch()
+            col = tiles_layout.columnCount()
+            tiles_layout.addWidget(tile, 0, col)
+            return value
 
-        top_bar.addStretch()
+        self.tile_gmv = _build_tile("GMV 总成交额")
+        self.tile_orders = _build_tile("订单总数")
+        self.tile_active_users = _build_tile("活跃用户数")
+        self.tile_ctr = _build_tile("CTR 点击率")
 
-        self.last_update_label = QLabel("最近刷新：--")
-        self.last_update_label.setObjectName("SubStatusLabel")
-        top_bar.addWidget(self.last_update_label)
+        main_layout.addWidget(tiles_card)
 
-        main.addLayout(top_bar)
+        # 中部：非对称 Bento Grid（左趋势面积图略收窄 + 右侧推荐效果 & 待办事项）
+        middle_card = QFrame()
+        middle_card.setObjectName("MiddleCard")
+        middle_layout = QHBoxLayout(middle_card)
+        middle_layout.setContentsMargins(12, 12, 12, 12)
+        middle_layout.setSpacing(12)
 
-        # 中部：summary 卡片 + 图表
-        center_layout = QVBoxLayout()
+        # 左：趋势面积图（活跃度 / 下单趋势）
+        self.trend_plot = pg.PlotWidget(title="近 30 天趋势分析")
+        self.trend_plot.setBackground("#FFFFFF")
+        # 轻量坐标轴说明，增强“专业感”
+        self.trend_plot.setLabel("left", "行为 / 订单数量")
+        self.trend_plot.setLabel("bottom", "日期")
+        # 向左略微收窄，为右侧指标区域腾出更多空间
+        middle_layout.addWidget(self.trend_plot, 2)
 
-        # 概览 summary
-        self.summary_label = QLabel("加载中...")
-        self.summary_label.setObjectName("SummaryLabel")
-        self.summary_label.setWordWrap(True)
-        center_layout.addWidget(self.summary_label)
+        # 右：推荐效果 & 工作待办（上下堆叠）
+        right_middle_layout = QVBoxLayout()
 
-        # 图表区域：两列布局
-        charts_layout = QHBoxLayout()
-
-        # 商品分类占比
-        self.category_plot = pg.PlotWidget(title="商品分类占比（数量）")
-        self.category_plot.setBackground("#020617")
-        charts_layout.addWidget(self.category_plot, 1)
-
-        # 近 30 天活跃度 / 下单趋势
-        self.activity_plot = pg.PlotWidget(title="近 30 天活跃度与下单趋势")
-        self.activity_plot.setBackground("#020617")
-        charts_layout.addWidget(self.activity_plot, 1)
-
-        center_layout.addLayout(charts_layout)
-
-        main.addLayout(center_layout, 3)
-
-        # 底部：左右两块表格（推荐效果指标 + 离线评估 / 用户画像）
-        bottom_layout = QHBoxLayout()
-
-        # 左：推荐效果指标表
-        left_tables = QVBoxLayout()
         metrics_title = QLabel("推荐效果 & 业务指标")
         metrics_title.setObjectName("SectionTitle")
-        left_tables.addWidget(metrics_title)
+        right_middle_layout.addWidget(metrics_title)
 
         self.metrics_table = QTableWidget(0, 2)
         self.metrics_table.setHorizontalHeaderLabels(["指标", "数值"])
         self._init_table_common(self.metrics_table)
-        left_tables.addWidget(self.metrics_table, 2)
+        right_middle_layout.addWidget(self.metrics_table, 1)
 
-        # 离线实验 / 公开评估结果区
-        self.eval_label = QLabel("公开测试集评估：暂无结果")
-        self.eval_label.setObjectName("SubStatusLabel")
-        left_tables.addWidget(self.eval_label)
+        todo_title = QLabel("工作待办事项")
+        todo_title.setObjectName("SectionTitle")
+        right_middle_layout.addWidget(todo_title)
 
-        self.eval_table = QTableWidget(0, 3)
-        self.eval_table.setHorizontalHeaderLabels(["K", "HitRate@K", "MAP@K"])
-        self._init_table_common(self.eval_table)
-        left_tables.addWidget(self.eval_table, 3)
+        self.todo_table = QTableWidget(0, 2)
+        self.todo_table.setHorizontalHeaderLabels(["事项", "截止时间"])
+        self._init_table_common(self.todo_table)
+        right_middle_layout.addWidget(self.todo_table, 1)
 
-        bottom_layout.addLayout(left_tables, 2)
+        middle_layout.addLayout(right_middle_layout, 3)
 
-        # 右：用户画像表
-        right_tables = QVBoxLayout()
-        users_title = QLabel("核心用户画像（活动度 TOP）")
-        users_title.setObjectName("SectionTitle")
-        right_tables.addWidget(users_title)
+        main_layout.addWidget(middle_card, 3)
 
-        self.user_table = QTableWidget(0, 3)
-        self.user_table.setHorizontalHeaderLabels(["用户ID", "活跃度", "核心标签"])
+        # 底部区域：核心用户画像（活动度 TOP）
+        tables_card = QFrame()
+        tables_card.setObjectName("TablesCard")
+        bottom_layout = QVBoxLayout(tables_card)
+
+        persona_title = QLabel("核心用户画像（活动度 TOP）")
+        persona_title.setObjectName("SectionTitle")
+        bottom_layout.addWidget(persona_title)
+
+        self.user_table = QTableWidget(0, 4)
+        self.user_table.setHorizontalHeaderLabels(["用户ID", "活跃度", "核心标签", "画像说明"])
         self._init_table_common(self.user_table)
-        right_tables.addWidget(self.user_table)
+        bottom_layout.addWidget(self.user_table)
 
-        bottom_layout.addLayout(right_tables, 3)
+        main_layout.addWidget(tables_card, 3)
 
-        main.addLayout(bottom_layout, 2)
-
-        # 将左右布局挂到 root
-        root_layout.addLayout(sidebar, 2)
-        root_layout.addLayout(main, 7)
+        # 将左右 widget 加入 splitter，控制初始宽度比例
+        splitter.addWidget(sidebar_container)
+        splitter.addWidget(main_container)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
 
         self.worker: DataWorker | None = None
         self.refresh()
@@ -248,57 +272,67 @@ class DashboardWindow(QMainWindow):
         self.worker.start()
 
     def render_data(self, payload: dict[str, Any]) -> None:
-        # 概览 summary：商品 + LLM 调用 + 推荐转化
+        # 概览 summary：商品 + LLM 调用 + 推荐转化（中文文案）
         pstats = payload["product_stats"]
         lstats = payload["llm_stats"]
         estats = payload["effect_stats"]
         offline = payload.get("offline_eval") or {}
-        self.summary_label.setText(
+        summary_text = (
             "商品总数 {total} ｜ DeepSeek 调用 {calls} 次（≈ Token {tokens}）\n"
-            "用户数 {users}（活跃 {active}）｜点击率 CTR {ctr:.1%} ｜ 转化率 CVR {cvr:.1%}".format(
-                total=pstats.get("total", 0),
-                calls=lstats.get("deepseek_calls", 0),
-                tokens=lstats.get("estimated_tokens", 0),
-                users=estats.get("total_users", 0),
-                active=estats.get("active_users", 0),
-                ctr=estats.get("ctr", 0.0),
-                cvr=estats.get("cvr", 0.0),
-            )
+            "用户数 {users}（活跃 {active}）｜点击率 CTR {ctr:.1%} ｜ 转化率 CVR {cvr:.1%}"
+        ).format(
+            total=pstats.get("total", 0),
+            calls=lstats.get("deepseek_calls", 0),
+            tokens=lstats.get("estimated_tokens", 0),
+            users=estats.get("total_users", 0),
+            active=estats.get("active_users", 0),
+            ctr=estats.get("ctr", 0.0),
+            cvr=estats.get("cvr", 0.0),
         )
 
-        # 更新时间文案
-        self.last_update_label.setText("最近刷新：来自本地日志 / JSON 当前快照")
+        # 用于底部说明 / 后续扩展，可以挂在某处辅助展示
+        # 当前仅保留变量，避免 UI 过于拥挤
+        _ = summary_text
 
-        # 商品分类柱状图
-        cats = list(pstats["category_dist"].keys())
-        values = list(pstats["category_dist"].values())
-        self.category_plot.clear()
-        if values:
-            xs = list(range(len(values)))
-            bg = pg.BarGraphItem(x=xs, height=values, width=0.6, brush="#38bdf8")
-            self.category_plot.addItem(bg)
-            ax = self.category_plot.getAxis("bottom")
-            ax.setTicks([list(enumerate(cats))])
+        # 顶部 4 个 Tile 数据
+        self.tile_gmv.setText(f"{estats.get('revenue', 0.0):.2f}")
+        self.tile_orders.setText(str(estats.get("total_orders", 0)))
+        self.tile_active_users.setText(str(estats.get("active_users", 0)))
+        self.tile_ctr.setText(f"{estats.get('ctr', 0.0):.1%}")
 
-        # 活跃度 & 下单趋势折线图
+        # 趋势面积图：活跃度 & 下单趋势（无网格线、无发光）
         daily = payload.get("daily_activity", [])
-        self.activity_plot.clear()
+        self.trend_plot.clear()
         if daily:
             xs = list(range(len(daily)))
             events = [d.get("events", 0) for d in daily]
             orders = [d.get("orders", 0) for d in daily]
             days = [d.get("day", "") for d in daily]
 
-            pen_events = pg.mkPen("#22c55e", width=2)  # 绿色：行为条数
-            pen_orders = pg.mkPen("#f97316", width=2)  # 橙色：下单量
-            self.activity_plot.plot(xs, events, pen=pen_events, name="行为数")
-            self.activity_plot.plot(xs, orders, pen=pen_orders, name="订单数")
-            ax = self.activity_plot.getAxis("bottom")
+            # 主色：深石板青（线）+ 鼠尾草绿（面积）
+            pen_events = pg.mkPen("#2D3E50", width=2)  # 行为数：主色实线
+            pen_orders = pg.mkPen("#6B8E23", width=2)  # 订单数：点缀色线
+
+            # 行为数折线
+            self.trend_plot.plot(xs, events, pen=pen_events, name="行为数")
+            # 订单数面积图
+            self.trend_plot.plot(
+                xs,
+                orders,
+                pen=pen_orders,
+                brush=pg.mkBrush(107, 142, 35, 40),  # 半透明鼠尾草绿，无发光
+                fillLevel=0,
+                name="订单数",
+            )
+
+            ax = self.trend_plot.getAxis("bottom")
             tick_step = max(1, len(days) // 8)
             ticks = [(i, days[i]) for i in range(0, len(days), tick_step)]
             ax.setTicks([ticks])
+            # 去除网格线
+            self.trend_plot.showGrid(x=False, y=False)
 
-        # 推荐效果指标表
+        # 推荐效果指标表（字段名统一中文）
         metrics_rows = [
             ("总用户数", estats.get("total_users", 0)),
             ("活跃用户数", estats.get("active_users", 0)),
@@ -317,30 +351,39 @@ class DashboardWindow(QMainWindow):
             self.metrics_table.setItem(i, 0, QTableWidgetItem(str(name)))
             self.metrics_table.setItem(i, 1, QTableWidgetItem(str(value)))
 
-        # 离线评估结果表
-        if offline:
-            ds = offline.get("dataset", "public_test")
-            ts = offline.get("last_updated", "-")
-            self.eval_label.setText(f"公开测试集评估（{ds}，更新于 {ts}）")
-            rows = offline.get("rows", [])
-            self.eval_table.setRowCount(len(rows))
-            for i, r in enumerate(rows):
-                self.eval_table.setItem(i, 0, QTableWidgetItem(str(r.get("k"))))
-                hr = r.get("hit_rate")
-                mp = r.get("map")
-                self.eval_table.setItem(i, 1, QTableWidgetItem("-" if hr is None else f"{hr:.3f}"))
-                self.eval_table.setItem(i, 2, QTableWidgetItem("-" if mp is None else f"{mp:.3f}"))
-        else:
-            self.eval_label.setText("公开测试集评估：暂无结果（缺少 data/metrics/recommender_eval.json）")
-            self.eval_table.setRowCount(0)
-
-        # 用户画像表
+        # 用户画像表（标签可在此处做英文转中文映射），并附带一句话画像说明
         users = payload["users"]
         self.user_table.setRowCount(len(users))
         for i, row in enumerate(users):
             self.user_table.setItem(i, 0, QTableWidgetItem(str(row["user_id"])))
             self.user_table.setItem(i, 1, QTableWidgetItem(str(row["activity_score"])))
-            self.user_table.setItem(i, 2, QTableWidgetItem(str(row["core_tags"])))
+            core_tags = str(row["core_tags"])
+            # 如后端返回英文标签，可在此扩展映射逻辑
+            tag_map = {
+                "high_value": "高价值用户",
+                "new_user": "新用户",
+                "churn_risk": "流失风险",
+            }
+            for en, zh in tag_map.items():
+                core_tags = core_tags.replace(en, zh)
+            self.user_table.setItem(i, 2, QTableWidgetItem(core_tags))
+
+            persona_summary = str(row.get("persona_summary", "") or "")
+            summary_item = QTableWidgetItem(persona_summary)
+            # 在单元格中显示完整的一句话画像说明，同时通过 tooltip 保留完整文本
+            summary_item.setToolTip(persona_summary)
+            self.user_table.setItem(i, 3, summary_item)
+
+        # 工作待办事项：根据当前数据给出几条运营 / 数据相关待办
+        todo_rows = [
+            ("复盘今日 CTR / CVR 异动", "今日"),
+            ("检查高价值用户（活动度 TOP）运营触达情况", "本周内"),
+            ("对低转化品类优化推荐策略", "本月内"),
+        ]
+        self.todo_table.setRowCount(len(todo_rows))
+        for i, (task, deadline) in enumerate(todo_rows):
+            self.todo_table.setItem(i, 0, QTableWidgetItem(task))
+            self.todo_table.setItem(i, 1, QTableWidgetItem(deadline))
 
         self.refresh_btn.setEnabled(True)
         self.refresh_btn.setText("刷新数据")

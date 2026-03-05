@@ -1,5 +1,6 @@
 <template>
   <div class="chat-root">
+    <!-- 头部状态栏：标题 + 在线状态 -->
     <header class="chat-header" @click="toggleCollapse">
       <div class="left">
         <span class="dot"></span>
@@ -8,12 +9,19 @@
           <span class="sub">描述你的需求，AI 将为你定制个性化选品</span>
         </div>
       </div>
-      <button class="collapse-btn">
-        {{ collapsed ? '展开' : '收起' }}
-      </button>
+      <div class="right">
+        <span class="status-pill">
+          <span class="status-dot"></span>
+          DeepSeek 智能助手 · 在线
+        </span>
+        <button class="collapse-btn">
+          {{ collapsed ? '展开' : '收起' }}
+        </button>
+      </div>
     </header>
 
     <section v-if="!collapsed" class="chat-body">
+      <!-- 对话历史区域：内部滚动 -->
       <div ref="listRef" class="messages">
         <div
           v-for="(msg, idx) in messages"
@@ -62,14 +70,16 @@
         </div>
       </div>
 
+      <!-- 底部输入栏：圆角、多行，自适应换行 -->
       <footer class="input-bar">
-        <input
+        <textarea
           v-model="input"
           class="input"
-          type="text"
-          placeholder="例如：帮我推荐几款通勤黑色风衣，适合 20-30 岁..."
+          rows="1"
+          placeholder="例如：帮我推荐几款通勤黑色风衣，适合 20-30 岁，可分层搭配..."
           :disabled="loading"
-          @keyup.enter="handleSend"
+          @keydown.enter.exact.prevent="handleSend"
+          @keydown.enter.shift.stop
         />
         <button
           class="send-btn"
@@ -164,9 +174,14 @@ const handleSend = async () => {
 
   loading.value = true
   try {
+    const history = messages.value.slice(-6).map((m) => ({
+      role: m.role,
+      content: m.text,
+    }))
     const { data } = await chatWithAI({
       user_id: props.userId,
       message: text,
+      context: history,
     })
 
     // 后端建议返回：{ reply: string, product_suggestions?: [] }
@@ -221,13 +236,14 @@ const toggleCollapse = () => {
 .chat-root {
   display: flex;
   flex-direction: column;
-  background: rgba(255, 255, 255, 0.96);
+  background: rgba(255, 255, 255, 0.78);
   border-radius: 18px;
   border: 1px solid rgba(226, 232, 240, 0.9);
   box-shadow:
     0 18px 40px rgba(15, 23, 42, 0.08),
     0 0 0 1px rgba(255, 255, 255, 0.9);
   overflow: hidden;
+  backdrop-filter: blur(18px);
 }
 
 .chat-header {
@@ -237,6 +253,12 @@ const toggleCollapse = () => {
   gap: 8px;
   padding: 8px 10px;
   cursor: pointer;
+}
+
+.chat-header .right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .left {
@@ -268,6 +290,27 @@ const toggleCollapse = () => {
   color: #9ca3af;
 }
 
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.32);
+  font-size: 11px;
+  color: #047857;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.8);
+  animation: breathe 1.4s ease-in-out infinite;
+}
+
 .collapse-btn {
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.8);
@@ -282,10 +325,11 @@ const toggleCollapse = () => {
   display: flex;
   flex-direction: column;
   border-top: 1px solid rgba(229, 231, 235, 0.9);
+  min-height: 0;
+  flex: 1;
 }
 
 .messages {
-  max-height: 360px;
   overflow-y: auto;
   padding: 10px 10px 6px;
   display: flex;
@@ -329,7 +373,7 @@ const toggleCollapse = () => {
   padding: 6px 8px;
   border-radius: 12px;
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.6;
   background: #f9fafb;
   border: 1px solid rgba(229, 231, 235, 0.9);
 }
@@ -402,11 +446,17 @@ const toggleCollapse = () => {
   gap: 6px;
   padding: 6px 8px 8px;
   border-top: 1px solid rgba(229, 231, 235, 0.9);
+  background: linear-gradient(
+    to top,
+    rgba(248, 250, 252, 0.98),
+    rgba(248, 250, 252, 0.9),
+    rgba(248, 250, 252, 0.85)
+  );
 }
 
 .input {
   flex: 1;
-  border-radius: 999px;
+  border-radius: 20px;
   border: none;
   background: rgba(248, 250, 252, 0.96);
   padding: 7px 12px;
@@ -415,6 +465,9 @@ const toggleCollapse = () => {
   box-shadow:
     0 0 0 1px rgba(229, 231, 235, 0.9),
     0 8px 18px rgba(15, 23, 42, 0.04);
+  resize: none;
+  min-height: 34px;
+  max-height: 96px;
 }
 
 .input::placeholder {
@@ -438,6 +491,13 @@ const toggleCollapse = () => {
   box-shadow: none;
 }
 
+.chat-root:focus-within .input {
+  box-shadow:
+    0 0 0 1px rgba(251, 146, 60, 0.7),
+    0 0 0 3px rgba(251, 146, 60, 0.18),
+    0 12px 30px rgba(248, 113, 22, 0.35);
+}
+
 @keyframes blink {
   0% {
     opacity: 0;
@@ -447,6 +507,18 @@ const toggleCollapse = () => {
   }
   100% {
     opacity: 0;
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
   }
 }
 </style>

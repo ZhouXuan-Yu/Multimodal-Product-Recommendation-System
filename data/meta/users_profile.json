@@ -119,9 +119,14 @@
         1,
         1,
         1,
+        1,
+        1,
+        1,
+        1,
+        1,
         1
       ],
-      "activity_score": 25,
+      "activity_score": 39,
       "history": [
         {
           "product_id": "p_2_0",
@@ -344,6 +349,134 @@
             "from": "mall_or_chat"
           },
           "timestamp": "2026-03-05T09:02:53.698803"
+        },
+        {
+          "product_id": "p_2_45",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T15:44:35.605039"
+        },
+        {
+          "product_id": "p_17_30",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T15:45:56.204667"
+        },
+        {
+          "product_id": "p_17_5",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T15:46:24.435377"
+        },
+        {
+          "product_id": "p_4_140",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T16:10:55.993185"
+        },
+        {
+          "product_id": "p_4_28",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T16:11:00.869889"
+        },
+        {
+          "product_id": "p_7_25",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T16:11:18.051879"
+        },
+        {
+          "product_id": "p_7_54",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T16:30:38.427125"
+        },
+        {
+          "product_id": "p_7_54",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T16:30:38.694038"
+        },
+        {
+          "product_id": "p_8_14",
+          "action": "normal",
+          "dwell_time": null,
+          "weight": 1.0,
+          "extra": null,
+          "timestamp": "2026-03-05T16:30:39.204616"
+        },
+        {
+          "product_id": "p_8_14",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T16:30:39.987107"
+        },
+        {
+          "product_id": "p_8_56",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T16:30:40.430927"
+        },
+        {
+          "product_id": "p_8_56",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T16:30:41.169362"
+        },
+        {
+          "product_id": "p_8_14",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T16:30:43.017488"
+        },
+        {
+          "product_id": "p_4_118",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T18:06:57.266563"
         }
       ]
     }

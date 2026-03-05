@@ -1,24 +1,5 @@
 <template>
   <div class="mall-root">
-    <!-- 顶部搜索与筛选条，可与 AI 导购联动 -->
-    <section class="search-bar glass-panel">
-      <input
-        v-model="keyword"
-        class="search-input"
-        type="text"
-        placeholder="搜索你感兴趣的商品，如：复古相机、春季风衣..."
-        @keyup.enter="handleSearch"
-      />
-      <select v-model="category" class="category-select">
-        <option value="all">全部类目</option>
-        <option value="men's clothing">男装</option>
-        <option value="women's clothing">女装</option>
-        <option value="jewelery">珠宝配饰</option>
-        <option value="electronics">数码电子</option>
-      </select>
-      <button class="search-btn" @click="handleSearch">搜索</button>
-    </section>
-
     <!-- 瀑布流商品列表 -->
     <section class="waterfall-wrapper soft-scrollbar">
       <div class="waterfall" v-if="products.length">
@@ -141,10 +122,6 @@ const loadingMore = ref(false)
 const noMore = ref(false)
 const preferenceSubmitting = ref(false)
 
-// 搜索关键词（初始与 props.query 保持同步）
-const keyword = ref('')
-const category = ref('all')
-
 // 格式化价格
 const formatPrice = (value) => {
   if (value == null) return '--'
@@ -169,18 +146,17 @@ const loadRecommendations = async (targetPage = 1) => {
   try {
     console.debug('[ProductWaterfall] 即将请求推荐列表', {
       user_id: props.userId,
-      keyword: keyword.value,
       externalQuery: props.query,
-      category: category.value,
       targetPage,
       pageSize,
     })
     const { data } = await fetchRecommendations({
       user_id: props.userId,
-      query: keyword.value || props.query || '',
+      query: props.query || '',
       page: targetPage,
       page_size: pageSize,
-      category: category.value,
+      // 去掉显式前端类目筛选，由 DeepSeek 意图解析与后端约束统一控制
+      category: null,
     })
 
     const items = data.items || data.recommendations || []
@@ -207,12 +183,6 @@ const loadRecommendations = async (targetPage = 1) => {
   } finally {
     loadingMore.value = false
   }
-}
-
-// 处理搜索：将当前关键字作为 query 重新触发推荐
-const handleSearch = () => {
-  noMore.value = false
-  loadRecommendations(1)
 }
 
 // 商品点击时，向父组件抛出事件，便于统一日志上报
@@ -266,7 +236,6 @@ watch(
   () => props.query,
   (val) => {
     if (val != null) {
-      keyword.value = val
       noMore.value = false
       loadRecommendations(1)
     }

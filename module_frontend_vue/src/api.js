@@ -50,6 +50,12 @@ export function fetchUserProfile(userId) {
   return instance.get(`/api/user_profile/${userId}`)
 }
 
+// 获取“画像与数据说明”所需的 AI 总结报告
+// 后端接口：GET /api/insights/{user_id}/report
+export function fetchInsightReport(userId, params = {}) {
+  return instance.get(`/api/insights/${userId}/report`, { params })
+}
+
 // 内部工具：优先尝试后端接口，失败或无有效数据时自动回退到本地 mock
 async function withInsightMock(requestFn, mockFn, userId, params = {}) {
   try {

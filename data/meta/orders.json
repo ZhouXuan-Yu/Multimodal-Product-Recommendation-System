@@ -71,6 +71,59 @@
       "note": null,
       "payment_channel": "mock_pay",
       "paid_at": "2026-03-05T09:07:17.815097"
+    },
+    "local-1241515924qqcom-20260305163100057": {
+      "order_id": "local-1241515924qqcom-20260305163100057",
+      "user_id": "1241515924@qq.com",
+      "status": "paid",
+      "items": [
+        {
+          "product_id": "p_4_140",
+          "quantity": 4,
+          "unit_price": 16.78
+        },
+        {
+          "product_id": "p_4_28",
+          "quantity": 6,
+          "unit_price": 17.51
+        },
+        {
+          "product_id": "p_7_25",
+          "quantity": 6,
+          "unit_price": 10.17
+        },
+        {
+          "product_id": "p_8_14",
+          "quantity": 3,
+          "unit_price": 12.11
+        }
+      ],
+      "total_amount": 269.53,
+      "currency": "CNY",
+      "created_at": "2026-03-05T16:31:00.057218",
+      "updated_at": "2026-03-05T16:31:04.549177",
+      "note": null,
+      "payment_channel": "mock_pay",
+      "paid_at": "2026-03-05T16:31:04.549177"
+    },
+    "local-1241515924qqcom-20260305180713823": {
+      "order_id": "local-1241515924qqcom-20260305180713823",
+      "user_id": "1241515924@qq.com",
+      "status": "paid",
+      "items": [
+        {
+          "product_id": "p_4_118",
+          "quantity": 8,
+          "unit_price": 13.89
+        }
+      ],
+      "total_amount": 111.12,
+      "currency": "CNY",
+      "created_at": "2026-03-05T18:07:13.823577",
+      "updated_at": "2026-03-05T18:07:17.548435",
+      "note": null,
+      "payment_channel": "mock_pay",
+      "paid_at": "2026-03-05T18:07:17.548435"
     }
   }
 }

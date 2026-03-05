@@ -1,14 +1,27 @@
+/* ===========================================
+ * 学术智库风（Paper & Sage）浅色后台主题
+ * 背景：#F9FAFB  卡片：#FFFFFF 边框：#E5E7EB
+ * 主文字：#111827  主色：#2D3E50  点缀：#6B8E23 / #BC8F8F
+ * 目标：接近 Stripe / Linear 的克制数据后台
+ * =========================================== */
+
 /* 顶层窗口背景与通用前景色 */
 QMainWindow {
-    background-color: #020617; /* slate-950 */
-    color: #e5e7eb;           /* slate-200 */
+    background-color: #F9FAFB;
+    color: #111827;
     font-family: "Microsoft YaHei", "Segoe UI", system-ui, -apple-system;
     font-size: 13px;
 }
 
 QWidget {
     background-color: transparent;
-    color: #e5e7eb;
+    color: #111827;
+}
+
+/* 左侧导航栏容器：浅灰背景 + 右侧分割线 */
+QWidget#Sidebar {
+    background-color: #F3F4F6;
+    border-right: 1px solid #E5E7EB;
 }
 
 /* 左侧导航栏品牌 */
@@ -16,12 +29,12 @@ QLabel#BrandLabel {
     font-size: 16px;
     font-weight: 600;
     padding: 12px 8px 4px 8px;
-    color: #f9fafb;
+    color: #111827;
 }
 
 QLabel#NavHint {
     font-size: 11px;
-    color: #6b7280;
+    color: #6B7280;
     padding: 4px 8px 12px 8px;
 }
 
@@ -34,16 +47,16 @@ QLabel#TitleLabel {
 
 QLabel#SubStatusLabel {
     font-size: 11px;
-    color: #9ca3af;
+    color: #6B7280;
     padding: 8px 4px;
 }
 
 QLabel#SummaryLabel {
-    border-radius: 8px;
-    padding: 10px 12px;
-    margin: 6px 0 8px 0;
-    background-color: rgba(15, 23, 42, 0.9);
-    border: 1px solid rgba(55, 65, 81, 0.9);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin: 4px 0 4px 0;
+    background-color: #F9FAFB;
+    border: 1px solid #E5E7EB;
 }
 
 QLabel#SectionTitle {
@@ -52,72 +65,108 @@ QLabel#SectionTitle {
     padding: 6px 2px;
 }
 
-/* 左侧导航按钮 */
+/* 左侧导航按钮：无缩放，无光效，仅轻微背景变化 */
 QPushButton#NavButton {
     text-align: left;
-    padding: 8px 12px;
-    margin: 4px 6px;
-    border-radius: 6px;
+    padding: 8px 14px;
+    margin: 4px 8px;
+    border-radius: 8px;
     background-color: transparent;
     border: 1px solid transparent;
-    color: #e5e7eb;
+    color: #111827;
 }
 
 QPushButton#NavButton:hover {
-    background-color: rgba(30, 64, 175, 0.4);
+    background-color: rgba(209, 213, 219, 0.60);
 }
 
 QPushButton#NavButton:checked {
-    background-color: rgba(30, 64, 175, 0.9);
-    border-color: rgba(129, 140, 248, 0.8);
+    background-color: rgba(45, 62, 80, 0.08);
+    border-color: #2D3E50;
 }
 
-/* 通用主按钮（刷新） */
+/* 通用主按钮（刷新）：实色，无发光，仅透明度变化 */
 QPushButton#PrimaryButton {
-    padding: 8px 12px;
-    margin: 10px 8px 14px 8px;
-    border-radius: 6px;
+    padding: 8px 14px;
+    margin: 10px 10px 16px 10px;
+    border-radius: 999px;
     border: none;
-    background-color: #1d4ed8;
-    color: #f9fafb;
+    background-color: #2D3E50;
+    color: #F9FAFB;
     font-weight: 500;
 }
 
 QPushButton#PrimaryButton:hover {
-    background-color: #2563eb;
+    background-color: rgba(45, 62, 80, 0.90);
 }
 
 QPushButton#PrimaryButton:disabled {
-    background-color: #1e293b;
-    color: #6b7280;
+    background-color: #E5E7EB;
+    color: #9CA3AF;
 }
 
-/* 表格通用样式 */
+/* 表格通用样式：白底 + 细边框 */
 QTableWidget {
-    background-color: rgba(15, 23, 42, 0.95);
-    alternate-background-color: rgba(15, 23, 42, 0.8);
-    gridline-color: rgba(55, 65, 81, 1.0);
-    border: 1px solid rgba(55, 65, 81, 1.0);
-    border-radius: 6px;
-    selection-background-color: rgba(59, 130, 246, 0.4);
-    selection-color: #f9fafb;
+    background-color: #FFFFFF;
+    alternate-background-color: #F9FAFB;
+    gridline-color: #E5E7EB;
+    border: 1px solid #E5E7EB;
+    border-radius: 10px;
+    selection-background-color: rgba(45, 62, 80, 0.08);
+    selection-color: #111827;
 }
 
 QHeaderView::section {
-    background-color: rgba(15, 23, 42, 1.0);
-    color: #9ca3af;
-    padding: 4px 6px;
+    background-color: #F3F4F6;
+    color: #4B5563;
+    padding: 6px 8px;
     border: 0px;
-    border-bottom: 1px solid rgba(55, 65, 81, 1.0);
+    border-bottom: 1px solid #E5E7EB;
 }
 
 QTableCornerButton::section {
-    background-color: rgba(15, 23, 42, 1.0);
+    background-color: #F3F4F6;
     border: 0px;
-    border-bottom: 1px solid rgba(55, 65, 81, 1.0);
+    border-bottom: 1px solid #E5E7EB;
 }
 
 QScrollBar:vertical, QScrollBar:horizontal {
     background: transparent;
+}
+
+/* 右侧主区域与卡片 Bento 容器 */
+QWidget#MainArea {
+    background-color: transparent;
+}
+
+QFrame#TilesCard,
+QFrame#MiddleCard,
+QFrame#TablesCard {
+    background-color: #FFFFFF;
+    border-radius: 12px;
+    border: 1px solid #E5E7EB;
+}
+
+/* 顶部 4 个统计 Tile */
+QFrame#StatTile {
+    background-color: #FFFFFF;
+    border-radius: 10px;
+    border: 1px solid #E5E7EB;
+    padding: 6px 10px;
+}
+
+QFrame#TablesCard {
+    margin-top: 12px;
+}
+
+QLabel#TileLabel {
+    font-size: 11px;
+    color: #6B7280;
+}
+
+QLabel#TileValue {
+    font-size: 18px;
+    font-weight: 600;
+    color: #111827;
 }
 

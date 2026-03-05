@@ -12,9 +12,11 @@ import axios from 'axios'
 //   VITE_API_BASE_URL=http://127.0.0.1:8000
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
+// 注意：首次调用推荐接口时，后端需要加载多模态模型（如 CLIP），在 CPU 环境下可能超过 15s。
+// 为避免前端过早报超时，这里将全局超时时间放宽到 60s。
 const instance = axios.create({
   baseURL: BASE_URL,
-  timeout: 15000,
+  timeout: 60000,
 })
 
 // 请求拦截器：可以在这里自动附加用户标识、token 等

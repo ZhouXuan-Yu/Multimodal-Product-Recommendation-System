@@ -67,7 +67,11 @@ class UserInsightEngine:
         embedder: Optional[ChineseCLIPEmbedder] = None,
         persona_collection_name: str = "user_personas",
     ) -> None:
-        self.vector_db = vector_db or VectorDBManager(collection_name=None)
+        # 这里不再向 VectorDBManager 传入 None 作为 collection_name，
+        # 避免在 chromadb.get_or_create_collection(name=None) 时触发 TypeError。
+        # 默认使用 VectorDBManager 自身的默认集合（商品向量），
+        # 而用户画像使用单独的 persona_collection。
+        self.vector_db = vector_db or VectorDBManager()
         # 为用户画像单独创建/获取一个集合
         self.persona_collection = self.vector_db.client.get_or_create_collection(
             name=persona_collection_name

@@ -29,16 +29,15 @@ class ChineseCLIPEmbedder:
         self.model_name = model_name
         self.image_weight = image_weight
         self.text_weight = text_weight
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # 为避免在部分 transformers/accelerate 版本下出现 "meta tensor" 到设备转换报错，
+        # 这里统一强制在 CPU 上加载与推理，多数本地演示环境也更稳定。
+        self.device = "cpu"
 
-        # 使用半精度以提升 RTX 5060 等 GPU 的吞吐与显存利用率
-        torch_dtype = torch.float16 if self.device == "cuda" else torch.float32
+        torch_dtype = torch.float32
         self.processor = AutoProcessor.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name, torch_dtype=torch_dtype).to(self.device)
-        if self.device == "cuda":
-            self.model = self.model.eval()
-        else:
-            self.model = self.model.eval()
+        # 只在 CPU 上加载模型，避免额外的 .to(self.device) 触发 meta tensor 相关错误
+        self.model = AutoModel.from_pretrained(model_name, torch_dtype=torch_dtype)
+        self.model = self.model.eval()
 
     @torch.no_grad()
     def encode_text(self, text: str) -> np.ndarray:

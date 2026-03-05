@@ -89,6 +89,125 @@
           "timestamp": "2026-03-04T13:15:17.911429"
         }
       ]
+    },
+    "1241515924@qq.com": {
+      "name": "1241515924@qq.com",
+      "core_tags": [],
+      "category_preferences": {},
+      "recent_activity": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "activity_score": 11,
+      "history": [
+        {
+          "product_id": "p_2_0",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T03:49:04.704845"
+        },
+        {
+          "product_id": "p_2_0",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T03:49:05.993890"
+        },
+        {
+          "product_id": "p_3_0",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T03:50:28.887622"
+        },
+        {
+          "product_id": "p_16_0",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T03:50:47.793011"
+        },
+        {
+          "product_id": "p_18_1",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T03:50:57.346577"
+        },
+        {
+          "product_id": "p_18_1",
+          "action": "normal",
+          "dwell_time": null,
+          "weight": 1.0,
+          "extra": null,
+          "timestamp": "2026-03-05T03:50:58.170578"
+        },
+        {
+          "product_id": "p_11_2",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T03:50:59.584195"
+        },
+        {
+          "product_id": "p_19_1",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T03:51:00.526478"
+        },
+        {
+          "product_id": "p_19_1",
+          "action": "like",
+          "dwell_time": null,
+          "weight": 2.0,
+          "extra": null,
+          "timestamp": "2026-03-05T03:51:01.002646"
+        },
+        {
+          "product_id": "p_19_1",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T03:51:02.021959"
+        },
+        {
+          "product_id": "p_3_3",
+          "action": "click",
+          "dwell_time": null,
+          "weight": null,
+          "extra": {
+            "from": "mall_or_chat"
+          },
+          "timestamp": "2026-03-05T03:51:21.991960"
+        }
+      ]
     }
   }
 }
